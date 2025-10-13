@@ -71,7 +71,9 @@ impl<'a> Walker<'a> {
     }
 
     fn walk(mut self) -> Vec<(ManagerSet, PathBuf)> {
-        self.step(self.root, ManagerSet::MAX);
+        // FIXME: handle overflow
+        let all_managers = (1 << self.managers.len() as u8) - 1;
+        self.step(self.root, all_managers);
         self.out
     }
 }
@@ -81,8 +83,21 @@ impl Walker<'_> {
         path.strip_prefix(self.root).ok()
     }
 
-    fn add_ignore_file(&mut self, path: PathBuf) -> io::Result<()> {
-        let contents = match std::fs::read(&path) {
+    fn display_path(&self, path: &Path) -> impl std::fmt::Display {
+        self.relative(path)
+            .map(|p| {
+                if p == Path::new("") {
+                    Path::new(".")
+                } else {
+                    p
+                }
+            })
+            .unwrap_or(path)
+            .display()
+    }
+
+    fn add_ignore_file(&mut self, path: &Path) -> io::Result<()> {
+        let contents = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
             Err(err) => return Err(err),
@@ -90,7 +105,7 @@ impl Walker<'_> {
 
         self.ignore.add_patterns_buffer(
             &contents,
-            self.relative(&path).unwrap(),
+            self.relative(path).unwrap(),
             Some(Path::new("")),
             IGNORE_SETTINGS,
         );
@@ -108,38 +123,54 @@ impl Walker<'_> {
     }
 
     fn step(&mut self, dir: &Path, enabled: ManagerSet) {
-        // TODO: logging
-        let _ = self.add_ignore_file(dir.join(".gitignore"));
+        log::trace!("entering {}", self.display_path(dir));
 
-        let Ok(entries) = std::fs::read_dir(dir) else {
-            // TODO: logging
-            return;
+        let local_ignore = dir.join(".gitignore");
+        if let Err(err) = self.add_ignore_file(&local_ignore) {
+            log::warn!(
+                "failed to read ignore file {}: {err}",
+                self.display_path(&local_ignore)
+            );
+        }
+
+        let entries = match std::fs::read_dir(dir) {
+            Ok(entries) => entries,
+            Err(err) => {
+                log::warn!("failed to open dir {}: {err}", self.display_path(dir));
+                return;
+            }
         };
         for entry in entries {
-            let Ok(entry) = entry else {
-                // TODO: logging
-                continue;
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(err) => {
+                    log::warn!("failed to read entry of {}: {err}", self.display_path(dir));
+                    continue;
+                }
             };
 
             let path = entry.path();
             let relative = self.relative(&path).unwrap();
+
             let Ok(file_type) = entry.file_type() else {
-                // TODO: logging
+                log::warn!("failed to read type of file: {}", relative.display());
                 continue;
             };
 
             if self.is_ignored(relative, file_type.is_dir()) {
+                log::debug!("ignoring {}", relative.display());
                 continue;
             }
 
             if file_type.is_symlink() {
-                eprintln!("Skipping symlink: {}", relative.display());
+                log::warn!("skipping symlink: {}", relative.display());
             } else if file_type.is_dir() {
-                let mut new_enabled = 0;
+                let mut new_enabled = enabled;
                 for (id, manager) in self.managers.iter().enumerate() {
                     let mask = 1 << (id as ManagerSet);
-                    if (enabled & mask) > 0 && manager.filter_directory(relative) {
-                        new_enabled |= mask;
+                    if (enabled & mask) > 0 && !manager.filter_directory(relative) {
+                        log::debug!("{}: disabling in {}", manager.name(), relative.display());
+                        new_enabled ^= mask;
                     }
                 }
 
@@ -151,6 +182,7 @@ impl Walker<'_> {
                     let id = id as ManagerSet;
                     let mask = 1 << id;
                     if (enabled & mask) > 0 && manager.filter_file(relative) {
+                        log::debug!("{}: registering {}", manager.name(), relative.display());
                         self.out.push((id, path.clone()));
                     }
                 }
