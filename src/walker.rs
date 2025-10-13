@@ -1,34 +1,29 @@
 use std::io;
+use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 
 use crate::Manager;
 
-pub fn walk(root: &Path, managers: &[Box<dyn Manager>]) -> Vec<(u8, PathBuf)> {
-    let mut ignore = gix_ignore::Search::from_git_dir(
-        &root.join(".git"),
-        None,
-        &mut Vec::new(),
-        IGNORE_SETTINGS,
-    )
-    .unwrap();
-    ignore.add_patterns_buffer(
-        IMPLICIT_IGNORES,
-        "<implicit ignores>",
-        None,
-        IGNORE_SETTINGS,
-    );
+pub fn walk<'m>(
+    root: &Path,
+    managers: &'m [Box<dyn Manager>],
+) -> Box<[(&'m dyn Manager, Vec<PathBuf>)]> {
+    let raw = Walker::new(root, managers).walk();
 
-    // TODO: add global git ignore
+    let mut sorted = managers
+        .iter()
+        .map(|manager| (manager.deref(), Vec::new()))
+        .collect::<Vec<_>>();
 
-    let mut walker = Walker {
-        root,
-        managers,
-        ignore,
-        out: Vec::new(),
-    };
+    for (id, path) in raw {
+        sorted[usize::from(id)].1.push(path);
+    }
 
-    walker.run(root, ManagerSet::MAX);
-    walker.out
+    for (_, paths) in &mut sorted {
+        paths.sort();
+    }
+
+    sorted.into_boxed_slice()
 }
 
 type ManagerSet = u8;
@@ -47,6 +42,38 @@ struct Walker<'a> {
 
     ignore: gix_ignore::Search,
     out: Vec<(ManagerSet, PathBuf)>,
+}
+
+impl<'a> Walker<'a> {
+    fn new(root: &'a Path, managers: &'a [Box<dyn Manager>]) -> Self {
+        let mut ignore = gix_ignore::Search::from_git_dir(
+            &root.join(".git"),
+            None,
+            &mut Vec::new(),
+            IGNORE_SETTINGS,
+        )
+        .unwrap();
+        ignore.add_patterns_buffer(
+            IMPLICIT_IGNORES,
+            "<implicit ignores>",
+            None,
+            IGNORE_SETTINGS,
+        );
+
+        // TODO: add global git ignore
+
+        Self {
+            root,
+            managers,
+            ignore,
+            out: Vec::new(),
+        }
+    }
+
+    fn walk(mut self) -> Vec<(ManagerSet, PathBuf)> {
+        self.step(self.root, ManagerSet::MAX);
+        self.out
+    }
 }
 
 impl Walker<'_> {
@@ -80,7 +107,7 @@ impl Walker<'_> {
             .is_some()
     }
 
-    fn run(&mut self, dir: &Path, enabled: ManagerSet) {
+    fn step(&mut self, dir: &Path, enabled: ManagerSet) {
         // TODO: logging
         let _ = self.add_ignore_file(dir.join(".gitignore"));
 
@@ -117,7 +144,7 @@ impl Walker<'_> {
                 }
 
                 if new_enabled > 0 {
-                    self.run(&path, new_enabled);
+                    self.step(&path, new_enabled);
                 }
             } else {
                 for (id, manager) in self.managers.iter().enumerate() {
