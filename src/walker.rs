@@ -1,26 +1,20 @@
 use std::fs;
 use std::io;
-use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
 
 use crate::Manager;
+use crate::managers::Scanner;
 
-pub fn walk<'m>(
-    root: &Path,
-    managers: &'m [Box<dyn Manager>],
-) -> Box<[(&'m dyn Manager, Vec<PathBuf>)]> {
+pub fn walk<S: Scanner>(root: &Path, managers: &[Box<dyn Manager<S>>]) -> Box<[Vec<PathBuf>]> {
     let raw = Walker::new(root, managers).walk();
 
-    let mut sorted = managers
-        .iter()
-        .map(|manager| (manager.deref(), Vec::new()))
-        .collect::<Vec<_>>();
+    let mut sorted = std::iter::repeat_n(Vec::new(), managers.len()).collect::<Vec<_>>();
 
     for (id, path) in raw {
-        sorted[usize::from(id)].1.push(path);
+        sorted[usize::from(id)].push(path);
     }
 
-    for (_, paths) in &mut sorted {
+    for paths in &mut sorted {
         paths.sort();
     }
 
@@ -37,16 +31,16 @@ static IMPLICIT_IGNORES: &[u8] = br"
 .gitignore
 ";
 
-struct Walker<'a> {
+struct Walker<'a, S: Scanner> {
     root: &'a Path,
-    managers: &'a [Box<dyn Manager>],
+    managers: &'a [Box<dyn Manager<S>>],
 
     ignore: gix_ignore::Search,
     out: Vec<(ManagerSet, PathBuf)>,
 }
 
-impl<'a> Walker<'a> {
-    fn new(root: &'a Path, managers: &'a [Box<dyn Manager>]) -> Self {
+impl<'a, S: Scanner> Walker<'a, S> {
+    fn new(root: &'a Path, managers: &'a [Box<dyn Manager<S>>]) -> Self {
         let mut ignore = gix_ignore::Search::from_git_dir(
             &root.join(".git"),
             None,
@@ -79,7 +73,7 @@ impl<'a> Walker<'a> {
     }
 }
 
-impl Walker<'_> {
+impl<S: Scanner> Walker<'_, S> {
     fn relative<'a>(&self, path: &'a Path) -> Option<&'a Path> {
         path.strip_prefix(self.root).ok()
     }
