@@ -1,3 +1,4 @@
+use std::fs;
 use std::io;
 use std::ops::Deref as _;
 use std::path::{Path, PathBuf};
@@ -156,37 +157,67 @@ impl Walker<'_> {
                 log::warn!("failed to read type of file: {}", relative.display());
                 continue;
             };
+            let file_type = FileType::from(file_type);
 
-            if self.is_ignored(relative, file_type.is_dir()) {
+            if self.is_ignored(relative, file_type == FileType::Directory) {
                 log::debug!("ignoring {}", relative.display());
                 continue;
             }
 
-            if file_type.is_symlink() {
-                log::warn!("skipping symlink: {}", relative.display());
-            } else if file_type.is_dir() {
-                let mut new_enabled = enabled;
-                for (id, manager) in self.managers.iter().enumerate() {
-                    let mask = 1 << (id as ManagerSet);
-                    if (enabled & mask) > 0 && !manager.filter_directory(relative) {
-                        log::debug!("{}: disabling in {}", manager.name(), relative.display());
-                        new_enabled ^= mask;
+            match file_type {
+                FileType::Unknown => {
+                    log::warn!("could not determine type: {}", relative.display());
+                }
+                FileType::Symlink => {
+                    log::warn!("skipping symlink: {}", relative.display());
+                }
+                FileType::Directory => {
+                    let mut new_enabled = enabled;
+                    for (id, manager) in self.managers.iter().enumerate() {
+                        let mask = 1 << (id as ManagerSet);
+                        if (enabled & mask) > 0 && !manager.filter_directory(relative) {
+                            log::debug!("{}: disabling in {}", manager.name(), relative.display());
+                            new_enabled ^= mask;
+                        }
+                    }
+
+                    if new_enabled > 0 {
+                        self.step(&path, new_enabled);
                     }
                 }
-
-                if new_enabled > 0 {
-                    self.step(&path, new_enabled);
-                }
-            } else {
-                for (id, manager) in self.managers.iter().enumerate() {
-                    let id = id as ManagerSet;
-                    let mask = 1 << id;
-                    if (enabled & mask) > 0 && manager.filter_file(relative) {
-                        log::debug!("{}: registering {}", manager.name(), relative.display());
-                        self.out.push((id, path.clone()));
+                FileType::File => {
+                    for (id, manager) in self.managers.iter().enumerate() {
+                        let id = id as ManagerSet;
+                        let mask = 1 << id;
+                        if (enabled & mask) > 0 && manager.filter_file(relative) {
+                            log::debug!("{}: registering {}", manager.name(), relative.display());
+                            self.out.push((id, path.clone()));
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+enum FileType {
+    Directory,
+    File,
+    Symlink,
+    Unknown,
+}
+
+impl From<fs::FileType> for FileType {
+    fn from(from: fs::FileType) -> Self {
+        if from.is_dir() {
+            Self::Directory
+        } else if from.is_file() {
+            Self::File
+        } else if from.is_symlink() {
+            Self::Symlink
+        } else {
+            Self::Unknown
         }
     }
 }
