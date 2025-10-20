@@ -3,13 +3,13 @@ use std::path::{Path, PathBuf};
 
 use facet::Facet;
 
-use super::Scanner;
+use crate::DepCollector;
 
 pub(super) struct Manager {
     deps: Vec<Dep>,
 }
 
-impl<S: super::Scanner> super::Manager<S> for Manager {
+impl super::Manager for Manager {
     fn name(&self) -> &'static str {
         "Bun"
     }
@@ -18,16 +18,16 @@ impl<S: super::Scanner> super::Manager<S> for Manager {
         path.file_name().is_some_and(|name| name == "package.json")
     }
 
-    fn scan_file(&mut self, file: &Path, mut scanner: S) {
+    fn scan_file(&mut self, file: &Path, deps: &DepCollector) {
         let dir = file.parent().unwrap();
         let package = std::fs::read(file).unwrap();
         let package = facet_json::from_slice::<Package>(&package).unwrap();
 
-        self.scan_inner(dir, package.dependencies, Category::Runtime, &mut scanner);
-        self.scan_inner(dir, package.dev, Category::Dev, &mut scanner);
-        self.scan_inner(dir, package.peer, Category::Peer, &mut scanner);
-        self.scan_inner(dir, package.optional, Category::Optional, &mut scanner);
-        self.scan_inner(dir, package.overrides, Category::Override, &mut scanner);
+        self.scan_inner(dir, package.dependencies, Category::Runtime, deps);
+        self.scan_inner(dir, package.dev, Category::Dev, deps);
+        self.scan_inner(dir, package.peer, Category::Peer, deps);
+        self.scan_inner(dir, package.optional, Category::Optional, deps);
+        self.scan_inner(dir, package.overrides, Category::Override, deps);
     }
 }
 
@@ -41,14 +41,14 @@ impl Manager {
         dir: &Path,
         deps: Deps,
         category: Category,
-        scanner: &mut impl Scanner,
+        dep_collector: &DepCollector,
     ) {
         for (name, version) in deps {
             if version == "workspace:*" {
                 continue;
             }
 
-            scanner.register(self.deps.len(), &name, category.name().into(), &version);
+            dep_collector.register(self.deps.len(), &name, category.name().into(), &version);
             self.deps.push(Dep {
                 name,
                 dir: dir.to_owned(),

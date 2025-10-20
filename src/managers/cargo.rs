@@ -5,13 +5,15 @@ use std::path::{Path, PathBuf};
 use taplo::dom::Node;
 use taplo::dom::node::{self, DomNode};
 
-use super::{Scanner, Spanned};
+use crate::DepCollector;
+
+use super::Spanned;
 
 pub(super) struct Manager {
     deps: Vec<Dep>,
 }
 
-impl<S: super::Scanner> super::Manager<S> for Manager {
+impl super::Manager for Manager {
     fn name(&self) -> &'static str {
         "Cargo"
     }
@@ -20,7 +22,7 @@ impl<S: super::Scanner> super::Manager<S> for Manager {
         path.file_name().is_some_and(|name| name == "Cargo.toml")
     }
 
-    fn scan_file(&mut self, file: &Path, mut scanner: S) {
+    fn scan_file(&mut self, file: &Path, deps: &DepCollector) {
         let toml = std::fs::read_to_string(file).unwrap();
 
         let dom = taplo::parser::parse(&toml).into_dom();
@@ -31,7 +33,7 @@ impl<S: super::Scanner> super::Manager<S> for Manager {
         if let Some(workspace) = get_root_table("workspace")
             && let Some(dependencies) = get_table(&workspace, &["workspace"], "dependencies", file)
         {
-            self.scan_inner(file, &dependencies, Category::Workspace, &mut scanner);
+            self.scan_inner(file, &dependencies, Category::Workspace, deps);
         }
 
         let tables = &[
@@ -41,7 +43,7 @@ impl<S: super::Scanner> super::Manager<S> for Manager {
         ];
         for (category, key) in tables {
             if let Some(table) = get_root_table(*key) {
-                self.scan_inner(file, &table, category.clone(), &mut scanner)
+                self.scan_inner(file, &table, category.clone(), deps)
             }
         }
 
@@ -68,7 +70,7 @@ impl<S: super::Scanner> super::Manager<S> for Manager {
             ];
             for (category, key) in tables {
                 if let Some(dependencies) = get_table(table, &["target", target], key, file) {
-                    self.scan_inner(file, &dependencies, category.clone(), &mut scanner)
+                    self.scan_inner(file, &dependencies, category.clone(), deps)
                 }
             }
         });
@@ -77,7 +79,7 @@ impl<S: super::Scanner> super::Manager<S> for Manager {
             let category = Category::Patch {
                 registry: registry.to_owned(),
             };
-            self.scan_inner(file, table, category, &mut scanner);
+            self.scan_inner(file, table, category, deps);
         });
     }
 }
@@ -92,7 +94,7 @@ impl Manager {
         file: &Path,
         table: &node::Table,
         category: Category,
-        scanner: &mut impl Scanner,
+        deps: &DepCollector,
     ) {
         for (name, meta) in table.entries().read().iter() {
             let version = match meta {
@@ -125,7 +127,7 @@ impl Manager {
                 _ => todo!(),
             };
 
-            scanner.register(
+            deps.register(
                 self.deps.len(),
                 name.value(),
                 category.name(),

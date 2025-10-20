@@ -3,13 +3,12 @@ mod cargo;
 mod github_actions;
 mod utils;
 
-use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::path::Path;
 
 use self::utils::Spanned;
 
-pub fn all<S: Scanner>() -> Vec<Box<dyn Manager<S>>> {
+pub(crate) fn all() -> Vec<Box<dyn Manager>> {
     vec![
         Box::new(bun::Manager::new()),
         Box::new(cargo::Manager::new()),
@@ -17,7 +16,7 @@ pub fn all<S: Scanner>() -> Vec<Box<dyn Manager<S>>> {
     ]
 }
 
-pub trait Manager<S: Scanner> {
+pub(crate) trait Manager {
     fn name(&self) -> &'static str;
 
     fn filter_directory(&self, path: &Path) -> bool {
@@ -26,11 +25,7 @@ pub trait Manager<S: Scanner> {
 
     fn filter_file(&self, path: &Path) -> bool;
 
-    fn scan_file(&mut self, file: &Path, scanner: S);
-}
-
-pub trait Scanner {
-    fn register(&self, id: usize, name: &str, category: Cow<'static, str>, version: &str);
+    fn scan_file(&mut self, file: &Path, deps: &crate::DepCollector);
 }
 
 fn is_dotfile(file_name: &OsStr) -> bool {

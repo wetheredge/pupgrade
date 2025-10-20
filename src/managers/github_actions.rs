@@ -12,7 +12,7 @@ pub(super) struct Manager {
     name_to_id: HashMap<String, usize>,
 }
 
-impl<S: super::Scanner> super::Manager<S> for Manager {
+impl super::Manager for Manager {
     fn name(&self) -> &'static str {
         "GitHub actions"
     }
@@ -54,7 +54,7 @@ impl<S: super::Scanner> super::Manager<S> for Manager {
         true
     }
 
-    fn scan_file(&mut self, file: &Path, scanner: S) {
+    fn scan_file(&mut self, file: &Path, deps: &crate::DepCollector) {
         let yaml = std::fs::read(file).unwrap();
 
         for captures in get_regex().captures_iter(&yaml) {
@@ -84,7 +84,7 @@ impl<S: super::Scanner> super::Manager<S> for Manager {
             let dep = &mut self.deps[id];
             dep.spans.push((file.to_owned(), start..end));
 
-            scanner.register(0, &dep.action, "actions".into(), &version);
+            deps.register(0, &dep.action, "actions".into(), &version);
 
             // TODO: runner images
         }
