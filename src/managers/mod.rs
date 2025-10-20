@@ -25,7 +25,9 @@ pub(crate) trait Manager {
 
     fn filter_file(&self, path: &Path) -> bool;
 
-    fn scan_file(&mut self, file: &Path, deps: &crate::DepCollector);
+    fn scan_file(&mut self, file: &Path);
+
+    fn all_deps(&self) -> Box<[crate::DepMeta]>;
 }
 
 fn is_dotfile(file_name: &OsStr) -> bool {

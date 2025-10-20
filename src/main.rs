@@ -22,6 +22,18 @@ fn main() {
     }
 }
 
+#[derive(Debug)]
+enum DepMeta {
+    Group {
+        name: String,
+        children: Box<[DepMeta]>,
+    },
+    Dep {
+        name: String,
+        version: String,
+    },
+}
+
 struct DepCollector;
 
 impl DepCollector {
