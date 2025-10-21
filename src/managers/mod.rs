@@ -1,11 +1,13 @@
+mod basic_dep;
 mod bun;
 mod cargo;
 mod github_actions;
 mod utils;
 
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use self::basic_dep::BasicDep;
 use self::utils::Spanned;
 
 pub(crate) fn all() -> Vec<Box<dyn Manager>> {
@@ -27,7 +29,11 @@ pub(crate) trait Manager {
 
     fn scan_file(&mut self, file: &Path);
 
-    fn all_deps(&self) -> Box<[crate::DepMeta]>;
+    fn summary(&self, context: &SummaryContext) -> crate::summary::Node;
+}
+
+pub(crate) struct SummaryContext {
+    pub(crate) root: PathBuf,
 }
 
 fn is_dotfile(file_name: &OsStr) -> bool {

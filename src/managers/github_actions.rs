@@ -1,11 +1,13 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use regex::bytes::{Match, Regex};
+
+use crate::summary;
 
 pub(super) struct Manager {
     deps: Vec<Dep>,
@@ -54,7 +56,7 @@ impl super::Manager for Manager {
         true
     }
 
-    fn scan_file(&mut self, file: &Path, deps: &crate::DepCollector) {
+    fn scan_file(&mut self, file: &Path) {
         let yaml = std::fs::read(file).unwrap();
 
         for captures in get_regex().captures_iter(&yaml) {
@@ -72,22 +74,52 @@ impl super::Manager for Manager {
                 *id
             } else {
                 let id = self.deps.len();
-                let action = action.into_owned();
-                self.name_to_id.insert(action.clone(), id);
+                self.name_to_id.insert(action.into_owned(), id);
                 self.deps.push(Dep {
-                    action,
+                    versions: HashSet::new(),
                     spans: Vec::new(),
                 });
                 id
             };
 
             let dep = &mut self.deps[id];
+            dep.versions.insert(version.into_owned());
             dep.spans.push((file.to_owned(), start..end));
-
-            deps.register(0, &dep.action, "actions".into(), &version);
 
             // TODO: runner images
         }
+    }
+
+    fn summary(&self, _context: &super::SummaryContext) -> summary::Node {
+        let mut actions = Vec::with_capacity(self.deps.len());
+        for (action, id) in &self.name_to_id {
+            actions.push((action, &self.deps[*id]));
+        }
+        actions.sort_by(|a, b| a.0.cmp(b.0));
+
+        let actions = actions
+            .into_iter()
+            .map(|(action, dep)| {
+                let mut versions = dep.versions.iter().collect::<Vec<_>>();
+                versions.sort();
+                let mut version_str = String::new();
+                for (i, version) in versions.iter().enumerate() {
+                    if i != 0 {
+                        version_str.push_str(", ");
+                    }
+                    version_str.push('`');
+                    version_str.push_str(version);
+                    version_str.push('`');
+                }
+
+                summary::ListItem {
+                    contents: summary::paragraph!("`" {action.clone()} "`: " {version_str}),
+                    sublist: Box::new([]),
+                }
+            })
+            .collect::<Vec<_>>();
+
+        summary::Node::List(actions.into_boxed_slice())
     }
 }
 
@@ -100,9 +132,9 @@ impl Manager {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Dep {
-    action: String,
+    versions: HashSet<String>,
     spans: Vec<(PathBuf, Range<usize>)>,
 }
 

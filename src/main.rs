@@ -1,7 +1,6 @@
 mod managers;
+mod summary;
 mod walker;
-
-use std::borrow::Cow;
 
 use self::managers::Manager;
 
@@ -12,34 +11,23 @@ fn main() {
     let root = std::env::current_dir().unwrap();
     let files = walker::walk(&root, &managers);
 
+    let summary_context = managers::SummaryContext { root };
+
+    let mut summary = Vec::new();
     for (manager, paths) in files.iter().enumerate() {
         let manager = &mut managers[manager];
-        println!("{}:", manager.name());
         for path in paths {
-            println!("  {}", path.display());
-            manager.scan_file(path, &DepCollector);
+            manager.scan_file(path);
         }
+
+        summary.push(summary::Heading {
+            name: manager.name().into(),
+            contents: Box::new(manager.summary(&summary_context)),
+        });
     }
-}
 
-#[derive(Debug)]
-enum DepMeta {
-    Group {
-        name: String,
-        children: Box<[DepMeta]>,
-    },
-    Dep {
-        name: String,
-        version: String,
-    },
-}
-
-struct DepCollector;
-
-impl DepCollector {
-    fn register(&self, _id: usize, name: &str, category: Cow<'static, str>, version: &str) {
-        eprintln!("    {name}({category}): {version}");
-    }
+    let summary = summary::Node::Headings(summary.into_boxed_slice());
+    println!("{}", summary.display());
 }
 
 fn init_logger() {

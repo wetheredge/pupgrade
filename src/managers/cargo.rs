@@ -1,11 +1,11 @@
 use std::borrow::Cow;
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use taplo::dom::Node;
 use taplo::dom::node::{self, DomNode};
 
-use crate::DepCollector;
+use crate::summary;
 
 use super::Spanned;
 
@@ -22,7 +22,7 @@ impl super::Manager for Manager {
         path.file_name().is_some_and(|name| name == "Cargo.toml")
     }
 
-    fn scan_file(&mut self, file: &Path, deps: &DepCollector) {
+    fn scan_file(&mut self, file: &Path) {
         let toml = std::fs::read_to_string(file).unwrap();
 
         let dom = taplo::parser::parse(&toml).into_dom();
@@ -33,7 +33,7 @@ impl super::Manager for Manager {
         if let Some(workspace) = get_root_table("workspace")
             && let Some(dependencies) = get_table(&workspace, &["workspace"], "dependencies", file)
         {
-            self.scan_inner(file, &dependencies, Category::Workspace, deps);
+            self.scan_inner(file, &dependencies, Category::Workspace);
         }
 
         let tables = &[
@@ -43,7 +43,7 @@ impl super::Manager for Manager {
         ];
         for (category, key) in tables {
             if let Some(table) = get_root_table(*key) {
-                self.scan_inner(file, &table, category.clone(), deps)
+                self.scan_inner(file, &table, category.clone())
             }
         }
 
@@ -70,7 +70,7 @@ impl super::Manager for Manager {
             ];
             for (category, key) in tables {
                 if let Some(dependencies) = get_table(table, &["target", target], key, file) {
-                    self.scan_inner(file, &dependencies, category.clone(), deps)
+                    self.scan_inner(file, &dependencies, category.clone())
                 }
             }
         });
@@ -79,8 +79,12 @@ impl super::Manager for Manager {
             let category = Category::Patch {
                 registry: registry.to_owned(),
             };
-            self.scan_inner(file, table, category, deps);
+            self.scan_inner(file, table, category);
         });
+    }
+
+    fn summary(&self, context: &super::SummaryContext) -> summary::Node {
+        super::basic_dep::summary(&self.deps, context)
     }
 }
 
@@ -89,13 +93,7 @@ impl Manager {
         Self { deps: Vec::new() }
     }
 
-    fn scan_inner(
-        &mut self,
-        file: &Path,
-        table: &node::Table,
-        category: Category,
-        deps: &DepCollector,
-    ) {
+    fn scan_inner(&mut self, file: &Path, table: &node::Table, category: Category) {
         for (name, meta) in table.entries().read().iter() {
             let version = match meta {
                 Node::Table(meta) => {
@@ -127,31 +125,20 @@ impl Manager {
                 _ => todo!(),
             };
 
-            deps.register(
-                self.deps.len(),
-                name.value(),
-                category.name(),
-                version.to_pretty(),
-            );
-
             self.deps.push(Dep {
-                name: name.value().to_owned(),
                 file: file.to_owned(),
+                category: category.clone(),
+                alias: None,
+                name: name.value().to_owned(),
                 version,
             });
         }
     }
 }
 
-#[derive(Debug)]
-#[expect(unused)]
-struct Dep {
-    name: String,
-    file: PathBuf,
-    version: Version,
-}
+type Dep = super::BasicDep<Category, Version>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Category {
     Workspace,
     Runtime(Option<String>),
@@ -163,18 +150,24 @@ enum Category {
 impl Category {
     fn name(&self) -> Cow<'static, str> {
         match self {
-            Self::Workspace => "workspace".into(),
-            Self::Runtime(Some(target)) => format!("runtime:{target}").into(),
-            Self::Runtime(None) => "runtime".into(),
-            Self::Build(Some(target)) => format!("build:{target}").into(),
-            Self::Build(None) => "build".into(),
-            Self::Dev => "peer".into(),
-            Self::Patch { registry } => format!("patch:{registry}").into(),
+            Self::Workspace => "Workspace".into(),
+            Self::Runtime(Some(target)) => format!("Runtime (`{target}`)").into(),
+            Self::Runtime(None) => "Runtime".into(),
+            Self::Build(Some(target)) => format!("Build (`{target}`)").into(),
+            Self::Build(None) => "Build".into(),
+            Self::Dev => "Dev".into(),
+            Self::Patch { registry } => format!("Patch ({registry})").into(),
         }
     }
 }
 
-#[derive(Debug)]
+impl fmt::Display for Category {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.name())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum Version {
     SemVer(Spanned<String>),
     Git {
@@ -194,10 +187,19 @@ impl Version {
                 tag,
             } => match (tag, revision) {
                 (Some(tag), _) => &tag.value,
-                (_, Some(revision)) => &revision.value,
+                (_, Some(revision)) => {
+                    let revision = &revision.value;
+                    &revision[0..revision.len().min(8)]
+                }
                 (None, None) => &repo.value,
             },
         }
+    }
+}
+
+impl fmt::Display for Version {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.to_pretty())
     }
 }
 

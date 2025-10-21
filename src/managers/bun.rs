@@ -1,9 +1,10 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::fmt;
+use std::path::Path;
 
 use facet::Facet;
 
-use crate::DepCollector;
+use crate::summary;
 
 pub(super) struct Manager {
     deps: Vec<Dep>,
@@ -18,16 +19,19 @@ impl super::Manager for Manager {
         path.file_name().is_some_and(|name| name == "package.json")
     }
 
-    fn scan_file(&mut self, file: &Path, deps: &DepCollector) {
-        let dir = file.parent().unwrap();
+    fn scan_file(&mut self, file: &Path) {
         let package = std::fs::read(file).unwrap();
         let package = facet_json::from_slice::<Package>(&package).unwrap();
 
-        self.scan_inner(dir, package.dependencies, Category::Runtime, deps);
-        self.scan_inner(dir, package.dev, Category::Dev, deps);
-        self.scan_inner(dir, package.peer, Category::Peer, deps);
-        self.scan_inner(dir, package.optional, Category::Optional, deps);
-        self.scan_inner(dir, package.overrides, Category::Override, deps);
+        self.scan_inner(file, package.dependencies, Category::Runtime);
+        self.scan_inner(file, package.dev, Category::Dev);
+        self.scan_inner(file, package.peer, Category::Peer);
+        self.scan_inner(file, package.optional, Category::Optional);
+        self.scan_inner(file, package.overrides, Category::Override);
+    }
+
+    fn summary(&self, context: &super::SummaryContext) -> summary::Node {
+        super::basic_dep::summary(&self.deps, context)
     }
 }
 
@@ -36,34 +40,41 @@ impl Manager {
         Self { deps: Vec::new() }
     }
 
-    fn scan_inner(
-        &mut self,
-        dir: &Path,
-        deps: Deps,
-        category: Category,
-        dep_collector: &DepCollector,
-    ) {
-        for (name, version) in deps {
+    fn scan_inner(&mut self, file: &Path, deps: Deps, category: Category) {
+        for (mut name, mut version) in deps {
             if version == "workspace:*" {
                 continue;
             }
 
-            dep_collector.register(self.deps.len(), &name, category.name().into(), &version);
+            let mut alias = None;
+            if let Some(rest) = version.strip_prefix("npm:") {
+                if let Some((actual_name, actual_version)) = rest.split_once('@') {
+                    alias = Some(name);
+                    name = actual_name.to_owned();
+                    version = actual_version.to_owned();
+                } else {
+                    log::warn!(
+                        "{}: {category:?} dependency {name} looks like an override, but has no @",
+                        file.display()
+                    );
+                    continue;
+                }
+            }
+
             self.deps.push(Dep {
+                file: file.to_owned(),
+                category,
+                alias,
                 name,
-                dir: dir.to_owned(),
+                version,
             })
         }
     }
 }
 
-#[derive(Debug, Facet)]
-struct Dep {
-    name: String,
-    dir: PathBuf,
-}
+type Dep = super::BasicDep<Category>;
 
-#[derive(Debug, Facet, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Facet, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(u8)]
 enum Category {
     Runtime,
@@ -76,12 +87,18 @@ enum Category {
 impl Category {
     const fn name(&self) -> &'static str {
         match self {
-            Self::Runtime => "runtime",
-            Self::Dev => "dev",
-            Self::Peer => "peer",
-            Self::Optional => "optional",
-            Self::Override => "override",
+            Self::Runtime => "Runtime",
+            Self::Dev => "Development",
+            Self::Peer => "Peer",
+            Self::Optional => "Optional",
+            Self::Override => "Override",
         }
+    }
+}
+
+impl fmt::Display for Category {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
     }
 }
 
