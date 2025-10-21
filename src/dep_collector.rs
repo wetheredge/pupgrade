@@ -1,0 +1,304 @@
+use facet::Facet;
+
+use std::borrow::Cow;
+use std::fmt;
+use std::path::PathBuf;
+use std::sync::Mutex;
+
+pub(crate) struct DepCollector {
+    groups: Mutex<Vec<Group>>,
+    deps: boxcar::Vec<Dep>,
+    lockfiles: boxcar::Vec<Lockfile>,
+}
+
+#[derive(Facet)]
+struct FacetDepCollector {
+    groups: Vec<Group>,
+    deps: Vec<Dep>,
+    lockfiles: Vec<Lockfile>,
+}
+
+#[derive(Facet)]
+struct Group {
+    id: String,
+    title: String,
+    parent: Option<usize>,
+    #[facet(skip, default)]
+    locked: bool,
+}
+
+#[derive(Facet)]
+pub(crate) struct Dep {
+    pub(crate) manager: usize,
+    pub(crate) skip: bool,
+    group: usize,
+
+    pub(crate) name: String,
+    pub(crate) renamed: Option<String>,
+    pub(crate) version: Version,
+    pub(crate) updates: Option<Version>,
+}
+
+#[derive(Facet)]
+#[repr(u8)]
+#[expect(unused)]
+pub(crate) enum Version {
+    SemVer(String),
+    GitCommit {
+        repo: String,
+        commit: String,
+    },
+    GitPinnedTag {
+        repo: String,
+        commit: String,
+        tag: String,
+    },
+}
+
+#[derive(Facet)]
+struct Lockfile {
+    manager: usize,
+    path: PathBuf,
+}
+
+#[derive(Debug, Facet, thiserror::Error)]
+#[error("The group exists but is locked")]
+pub(crate) struct LockedGroupError;
+
+#[derive(Debug, Facet, thiserror::Error)]
+#[error("A group with this ID already exists")]
+pub(crate) struct GroupExistsError;
+
+/// Reference to a [`Group`] that *does* prevent creation of new subgroups.
+pub(crate) struct GroupHandle<'a> {
+    collector: &'a DepCollector,
+    index: usize,
+}
+
+/// Reference to a [`Group`] that *does not* prevent creation of new subgroups.
+pub(crate) struct GroupRef<'a> {
+    collector: &'a DepCollector,
+    index: usize,
+}
+
+struct GroupIter<'a> {
+    collector: &'a DepCollector,
+    parent: Option<usize>,
+    cursor: Option<usize>,
+}
+
+struct DepIter<'a> {
+    iter: boxcar::Iter<'a, Dep>,
+    group: usize,
+}
+
+impl DepCollector {
+    pub(crate) fn new() -> Self {
+        Self {
+            groups: Mutex::new(Vec::new()),
+            deps: boxcar::Vec::new(),
+            lockfiles: boxcar::Vec::new(),
+        }
+    }
+
+    pub(crate) fn get_group<'a>(
+        &'a self,
+        id: Cow<'_, str>,
+        title: impl FnOnce() -> String,
+    ) -> Result<GroupHandle<'a>, LockedGroupError> {
+        let mut groups = self.groups.lock().unwrap();
+
+        for (index, group) in groups.iter_mut().enumerate() {
+            if group.parent.is_none() && group.id == id {
+                if group.locked {
+                    return Err(LockedGroupError);
+                }
+
+                group.locked = true;
+                return Ok(GroupHandle {
+                    collector: self,
+                    index,
+                });
+            }
+        }
+
+        let index = groups.len();
+        groups.push(Group {
+            id: id.into_owned(),
+            title: title(),
+            parent: None,
+            locked: true,
+        });
+        Ok(GroupHandle {
+            collector: self,
+            index,
+        })
+    }
+
+    pub(crate) fn iter_root_groups(&self) -> impl Iterator<Item = GroupRef<'_>> + use<'_> {
+        GroupIter {
+            collector: self,
+            parent: None,
+            cursor: Some(0),
+        }
+    }
+}
+
+impl<'a> GroupHandle<'a> {
+    pub(crate) fn as_ref(&self) -> GroupRef<'a> {
+        GroupRef {
+            collector: self.collector,
+            index: self.index,
+        }
+    }
+
+    pub(crate) fn new_subgroup(
+        &self,
+        id: String,
+        title: String,
+    ) -> Result<GroupHandle<'a>, GroupExistsError> {
+        let mut groups = self.collector.groups.lock().unwrap();
+
+        let exists = groups
+            .iter()
+            .any(|group| group.parent == Some(self.index) && group.id == id);
+
+        if exists {
+            Err(GroupExistsError)
+        } else {
+            let index = groups.len();
+            groups.push(Group {
+                id,
+                title,
+                parent: Some(self.index),
+                locked: true,
+            });
+            Ok(GroupHandle {
+                collector: self.collector,
+                index,
+            })
+        }
+    }
+
+    pub(crate) fn push_dep(&self, name: String, renamed: Option<String>, version: Version) {
+        self.collector.deps.push(Dep {
+            manager: 0, // FIXME
+            skip: false,
+            group: self.index,
+            name,
+            renamed,
+            version,
+            updates: None,
+        });
+    }
+}
+
+impl Drop for GroupHandle<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut groups) = self.collector.groups.lock() {
+            groups[self.index].locked = false;
+        }
+    }
+}
+
+impl<'a> GroupRef<'a> {
+    pub(crate) fn title<T>(&self, f: impl FnOnce(&str) -> T) -> T {
+        let groups = self.collector.groups.lock().unwrap();
+        f(&groups[self.index].title)
+    }
+
+    pub(crate) fn full_id<T>(&self, f: impl FnOnce(&[&str]) -> T) -> T {
+        let groups = self.collector.groups.lock().unwrap();
+
+        let mut id = Vec::new();
+        let mut current = Some(self.index);
+        while let Some(index) = current {
+            let group = &groups[index];
+            id.push(group.id.as_str());
+            current = group.parent;
+        }
+
+        f(&id)
+    }
+
+    pub(crate) fn iter_subgroups(&self) -> impl Iterator<Item = GroupRef<'a>> + use<'a> {
+        GroupIter {
+            collector: self.collector,
+            parent: Some(self.index),
+            cursor: Some(self.index + 1),
+        }
+    }
+
+    pub(crate) fn iter_dependencies(&self) -> impl Iterator<Item = &'a Dep> + use<'a> {
+        DepIter {
+            iter: self.collector.deps.iter(),
+            group: self.index,
+        }
+    }
+}
+
+impl<'a> Iterator for GroupIter<'a> {
+    type Item = GroupRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let cursor = self.cursor.as_mut()?;
+
+        let groups = self.collector.groups.lock().unwrap();
+
+        if let Some(index) = groups
+            .iter()
+            .skip(*cursor)
+            .position(|group| group.parent == self.parent)
+            .map(|i| i + *cursor)
+        {
+            *cursor = index + 1;
+            Some(GroupRef {
+                collector: self.collector,
+                index,
+            })
+        } else {
+            self.cursor = None;
+            None
+        }
+    }
+}
+
+impl<'a> Iterator for DepIter<'a> {
+    type Item = &'a Dep;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter
+            .by_ref()
+            .find_map(|(_, dep)| (dep.group == self.group).then_some(dep))
+    }
+}
+
+impl fmt::Display for Version {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::SemVer(semver) => f.write_str(semver),
+            Self::GitCommit { .. } => todo!(),
+            Self::GitPinnedTag { .. } => todo!(),
+        }
+    }
+}
+
+impl From<DepCollector> for FacetDepCollector {
+    fn from(plain: DepCollector) -> Self {
+        Self {
+            groups: plain.groups.into_inner().unwrap().into_iter().collect(),
+            deps: plain.deps.into_iter().collect(),
+            lockfiles: plain.lockfiles.into_iter().collect(),
+        }
+    }
+}
+
+impl From<FacetDepCollector> for DepCollector {
+    fn from(facet: FacetDepCollector) -> Self {
+        Self {
+            groups: Mutex::new(facet.groups.into_iter().collect()),
+            deps: facet.deps.into_iter().collect(),
+            lockfiles: facet.lockfiles.into_iter().collect(),
+        }
+    }
+}

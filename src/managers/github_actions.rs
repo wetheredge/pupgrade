@@ -1,25 +1,15 @@
-use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
-use std::ops::Range;
-use std::sync::OnceLock;
 
-use camino::{Utf8Path, Utf8PathBuf};
-use regex::bytes::{Match, Regex};
+use camino::Utf8Path;
 
-use crate::summary;
-
-pub(super) struct Manager {
-    deps: Vec<Dep>,
-    name_to_id: HashMap<String, usize>,
-}
+pub(super) struct Manager;
 
 impl super::Manager for Manager {
     fn name(&self) -> &'static str {
         "GitHub actions"
     }
 
-    fn filter_directory(&self, path: &Utf8Path) -> bool {
+    fn walk_directory(&self, path: &Utf8Path) -> bool {
         let mut components = path.iter();
 
         if !matches!(components.next(), Some(dir) if dir == OsStr::new(".github")) {
@@ -41,7 +31,7 @@ impl super::Manager for Manager {
         }
     }
 
-    fn filter_file(&self, path: &Utf8Path) -> bool {
+    fn walk_file(&self, path: &Utf8Path) -> bool {
         if !path
             .extension()
             .is_some_and(|ext| ext == "yaml" || ext == "yml")
@@ -56,96 +46,7 @@ impl super::Manager for Manager {
         true
     }
 
-    fn scan_file(&mut self, file: &Utf8Path) {
-        let yaml = std::fs::read(file).unwrap();
-
-        for captures in get_regex().captures_iter(&yaml) {
-            let action = captures.name("repo").unwrap();
-            let start = action.start();
-            let action = match_to_string(action);
-
-            let version = captures
-                .name("tag")
-                .unwrap_or_else(|| captures.name("rev").unwrap());
-            let end = version.end();
-            let version = match_to_string(version);
-
-            let id = if let Some(id) = self.name_to_id.get(&*action) {
-                *id
-            } else {
-                let id = self.deps.len();
-                self.name_to_id.insert(action.into_owned(), id);
-                self.deps.push(Dep {
-                    versions: HashSet::new(),
-                    spans: Vec::new(),
-                });
-                id
-            };
-
-            let dep = &mut self.deps[id];
-            dep.versions.insert(version.into_owned());
-            dep.spans.push((file.to_owned(), start..end));
-
-            // TODO: runner images
-        }
+    fn scan_file(&self, _path: &Utf8Path, _collector: &crate::DepCollector) {
+        // TODO
     }
-
-    fn summary(&self, _context: &super::SummaryContext) -> summary::Node {
-        let mut actions = Vec::with_capacity(self.deps.len());
-        for (action, id) in &self.name_to_id {
-            actions.push((action, &self.deps[*id]));
-        }
-        actions.sort_by(|a, b| a.0.cmp(b.0));
-
-        let actions = actions
-            .into_iter()
-            .map(|(action, dep)| {
-                let mut versions = dep.versions.iter().collect::<Vec<_>>();
-                versions.sort();
-                let mut version_str = String::new();
-                for (i, version) in versions.iter().enumerate() {
-                    if i != 0 {
-                        version_str.push_str(", ");
-                    }
-                    version_str.push('`');
-                    version_str.push_str(version);
-                    version_str.push('`');
-                }
-
-                summary::ListItem {
-                    contents: summary::paragraph!("`" {action.clone()} "`: " {version_str}),
-                    sublist: Box::new([]),
-                }
-            })
-            .collect::<Vec<_>>();
-
-        summary::Node::List(actions.into_boxed_slice())
-    }
-}
-
-impl Manager {
-    pub(super) fn new() -> Self {
-        Self {
-            deps: Vec::new(),
-            name_to_id: HashMap::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct Dep {
-    versions: HashSet<String>,
-    spans: Vec<(Utf8PathBuf, Range<usize>)>,
-}
-
-fn get_regex() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        let re = r"(?m-u:^[^#\n]+[[:^word:]]uses:\s*(?<repo>[[[:word:]]-]+/[-[[:word:]]]+)@(?<rev>[[:xdigit:]]+)\s*(?:#\s*(?<tag>[-.[[:word:]]]+\s*)?)$)";
-        Regex::new(re).unwrap()
-    })
-}
-
-fn match_to_string<'a>(m: Match<'a>) -> Cow<'a, str> {
-    String::from_utf8_lossy(m.as_bytes())
 }

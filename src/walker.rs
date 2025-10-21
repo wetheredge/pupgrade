@@ -165,7 +165,7 @@ impl Walker<'_> {
                     let mut new_enabled = enabled;
                     for (id, manager) in self.managers.iter().enumerate() {
                         let mask = 1 << (id as ManagerSet);
-                        if (enabled & mask) > 0 && !manager.filter_directory(relative) {
+                        if (enabled & mask) > 0 && !manager.walk_directory(relative) {
                             log::debug!("{}: disabling in {relative}", manager.name());
                             new_enabled ^= mask;
                         }
@@ -179,9 +179,9 @@ impl Walker<'_> {
                     for (id, manager) in self.managers.iter().enumerate() {
                         let id = id as ManagerSet;
                         let mask = 1 << id;
-                        if (enabled & mask) > 0 && manager.filter_file(relative) {
+                        if (enabled & mask) > 0 && manager.walk_file(relative) {
                             log::debug!("{}: registering {relative}", manager.name());
-                            self.out.push((id, path.clone()));
+                            self.out.push((id, relative.to_owned()));
                         }
                     }
                 }
