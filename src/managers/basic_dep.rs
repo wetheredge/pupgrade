@@ -1,10 +1,10 @@
-use std::path::{Path, PathBuf};
+use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::{managers::utils::get_or_insert, summary};
 
 #[derive(Debug)]
 pub(super) struct BasicDep<C, V = String> {
-    pub(super) file: PathBuf,
+    pub(super) file: Utf8PathBuf,
     pub(super) category: C,
     #[expect(unused)]
     pub(super) alias: Option<String>,
@@ -16,7 +16,7 @@ pub(super) fn summary<C: Clone + Ord + ToString, V: Ord + ToString>(
     deps: &[BasicDep<C, V>],
     context: &super::SummaryContext,
 ) -> summary::Node {
-    let mut files = Vec::<(&Path, Vec<(C, Vec<(&str, &V, summary::Paragraph)>)>)>::new();
+    let mut files = Vec::<(&Utf8Path, Vec<(C, Vec<(&str, &V, summary::Paragraph)>)>)>::new();
     for dep in deps {
         let file = get_or_insert(&mut files, &&*dep.file, Vec::new);
         let category = get_or_insert(file, &dep.category, Vec::new);
@@ -35,7 +35,7 @@ pub(super) fn summary<C: Clone + Ord + ToString, V: Ord + ToString>(
         .into_iter()
         .map(|(file, categories)| {
             let file = file.strip_prefix(&context.root).unwrap();
-            let name = format!("`{}`", file.display());
+            let name = format!("`{file}`");
 
             let categories = categories
                 .into_iter()

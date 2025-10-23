@@ -2,9 +2,9 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use camino::{Utf8Path, Utf8PathBuf};
 use regex::bytes::{Match, Regex};
 
 use crate::summary;
@@ -19,7 +19,7 @@ impl super::Manager for Manager {
         "GitHub actions"
     }
 
-    fn filter_directory(&self, path: &Path) -> bool {
+    fn filter_directory(&self, path: &Utf8Path) -> bool {
         let mut components = path.iter();
 
         if !matches!(components.next(), Some(dir) if dir == OsStr::new(".github")) {
@@ -41,7 +41,7 @@ impl super::Manager for Manager {
         }
     }
 
-    fn filter_file(&self, path: &Path) -> bool {
+    fn filter_file(&self, path: &Utf8Path) -> bool {
         if !path
             .extension()
             .is_some_and(|ext| ext == "yaml" || ext == "yml")
@@ -56,7 +56,7 @@ impl super::Manager for Manager {
         true
     }
 
-    fn scan_file(&mut self, file: &Path) {
+    fn scan_file(&mut self, file: &Utf8Path) {
         let yaml = std::fs::read(file).unwrap();
 
         for captures in get_regex().captures_iter(&yaml) {
@@ -135,7 +135,7 @@ impl Manager {
 #[derive(Debug, Clone)]
 struct Dep {
     versions: HashSet<String>,
-    spans: Vec<(PathBuf, Range<usize>)>,
+    spans: Vec<(Utf8PathBuf, Range<usize>)>,
 }
 
 fn get_regex() -> &'static Regex {

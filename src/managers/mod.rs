@@ -4,8 +4,7 @@ mod cargo;
 mod github_actions;
 mod utils;
 
-use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use camino::{Utf8Path, Utf8PathBuf};
 
 use self::basic_dep::BasicDep;
 use self::utils::Spanned;
@@ -21,23 +20,17 @@ pub(crate) fn all() -> Vec<Box<dyn Manager>> {
 pub(crate) trait Manager {
     fn name(&self) -> &'static str;
 
-    fn filter_directory(&self, path: &Path) -> bool {
-        path.file_name().is_none_or(|name| !is_dotfile(name))
+    fn filter_directory(&self, path: &Utf8Path) -> bool {
+        path.file_name().is_none_or(|name| !name.starts_with('.'))
     }
 
-    fn filter_file(&self, path: &Path) -> bool;
+    fn filter_file(&self, path: &Utf8Path) -> bool;
 
-    fn scan_file(&mut self, file: &Path);
+    fn scan_file(&mut self, file: &Utf8Path);
 
     fn summary(&self, context: &SummaryContext) -> crate::summary::Node;
 }
 
 pub(crate) struct SummaryContext {
-    pub(crate) root: PathBuf,
-}
-
-fn is_dotfile(file_name: &OsStr) -> bool {
-    file_name
-        .as_encoded_bytes()
-        .starts_with(OsStr::new(".").as_encoded_bytes())
+    pub(crate) root: Utf8PathBuf,
 }

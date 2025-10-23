@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 use std::fmt;
-use std::path::Path;
 
+use camino::Utf8Path;
 use taplo::dom::Node;
 use taplo::dom::node::{self, DomNode};
 
@@ -18,11 +18,11 @@ impl super::Manager for Manager {
         "Cargo"
     }
 
-    fn filter_file(&self, path: &Path) -> bool {
+    fn filter_file(&self, path: &Utf8Path) -> bool {
         path.file_name().is_some_and(|name| name == "Cargo.toml")
     }
 
-    fn scan_file(&mut self, file: &Path) {
+    fn scan_file(&mut self, file: &Utf8Path) {
         let toml = std::fs::read_to_string(file).unwrap();
 
         let dom = taplo::parser::parse(&toml).into_dom();
@@ -54,7 +54,7 @@ impl super::Manager for Manager {
                     if let Some(table) = table.as_table() {
                         run(child, table);
                     } else {
-                        log::warn!("{}: {root}.'{child}' is not a table", file.display())
+                        log::warn!("{file}: {root}.'{child}' is not a table");
                     }
                 }
             }
@@ -93,7 +93,7 @@ impl Manager {
         Self { deps: Vec::new() }
     }
 
-    fn scan_inner(&mut self, file: &Path, table: &node::Table, category: Category) {
+    fn scan_inner(&mut self, file: &Utf8Path, table: &node::Table, category: Category) {
         for (name, meta) in table.entries().read().iter() {
             let version = match meta {
                 Node::Table(meta) => {
@@ -227,13 +227,18 @@ impl fmt::Display for FullKey<'_> {
     }
 }
 
-fn get_table(from: &node::Table, parents: &[&str], key: &str, file: &Path) -> Option<node::Table> {
+fn get_table(
+    from: &node::Table,
+    parents: &[&str],
+    key: &str,
+    file: &Utf8Path,
+) -> Option<node::Table> {
     if let Some(table) = from.get(key) {
         if let Ok(found) = table.try_into_table() {
             Some(found)
         } else {
             let key = FullKey { parents, key };
-            log::warn!("{}: {} is not a table", file.display(), key);
+            log::warn!("{file}: {key} is not a table");
             None
         }
     } else {

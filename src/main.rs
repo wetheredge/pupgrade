@@ -2,13 +2,15 @@ mod managers;
 mod summary;
 mod walker;
 
+use camino::Utf8PathBuf;
+
 use self::managers::Manager;
 
 fn main() {
     init_logger();
 
     let mut managers = managers::all();
-    let root = std::env::current_dir().unwrap();
+    let root = Utf8PathBuf::try_from(std::env::current_dir().unwrap()).unwrap();
     let files = walker::walk(&root, &managers);
 
     let summary_context = managers::SummaryContext { root };

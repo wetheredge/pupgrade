@@ -1,10 +1,12 @@
 use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+
+use camino::{Utf8Path, Utf8PathBuf};
 
 use crate::Manager;
 
-pub(crate) fn walk(root: &Path, managers: &[Box<dyn Manager>]) -> Box<[Vec<PathBuf>]> {
+pub(crate) fn walk(root: &Utf8Path, managers: &[Box<dyn Manager>]) -> Box<[Vec<Utf8PathBuf>]> {
     let raw = Walker::new(root, managers).walk();
 
     let mut sorted = std::iter::repeat_n(Vec::new(), managers.len()).collect::<Vec<_>>();
@@ -31,17 +33,17 @@ static IMPLICIT_IGNORES: &[u8] = br"
 ";
 
 struct Walker<'a> {
-    root: &'a Path,
+    root: &'a Utf8Path,
     managers: &'a [Box<dyn Manager>],
 
     ignore: gix_ignore::Search,
-    out: Vec<(ManagerSet, PathBuf)>,
+    out: Vec<(ManagerSet, Utf8PathBuf)>,
 }
 
 impl<'a> Walker<'a> {
-    fn new(root: &'a Path, managers: &'a [Box<dyn Manager>]) -> Self {
+    fn new(root: &'a Utf8Path, managers: &'a [Box<dyn Manager>]) -> Self {
         let mut ignore = gix_ignore::Search::from_git_dir(
-            &root.join(".git"),
+            &root.join(".git").into_std_path_buf(),
             None,
             &mut Vec::new(),
             IGNORE_SETTINGS,
@@ -64,7 +66,7 @@ impl<'a> Walker<'a> {
         }
     }
 
-    fn walk(mut self) -> Vec<(ManagerSet, PathBuf)> {
+    fn walk(mut self) -> Vec<(ManagerSet, Utf8PathBuf)> {
         // FIXME: handle overflow
         let all_managers = (1 << self.managers.len() as u8) - 1;
         self.step(self.root, all_managers);
@@ -73,24 +75,21 @@ impl<'a> Walker<'a> {
 }
 
 impl Walker<'_> {
-    fn relative<'a>(&self, path: &'a Path) -> Option<&'a Path> {
+    fn relative<'a>(&self, path: &'a Utf8Path) -> Option<&'a Utf8Path> {
         path.strip_prefix(self.root).ok()
     }
 
-    fn display_path(&self, path: &Path) -> impl std::fmt::Display {
-        self.relative(path)
-            .map(|p| {
-                if p == Path::new("") {
-                    Path::new(".")
-                } else {
-                    p
-                }
-            })
-            .unwrap_or(path)
-            .display()
+    fn display_path(&self, path: &Utf8Path) -> impl std::fmt::Display {
+        self.relative(path).map_or(path, |p| {
+            if p == Utf8Path::new("") {
+                Utf8Path::new(".")
+            } else {
+                p
+            }
+        })
     }
 
-    fn add_ignore_file(&mut self, path: &Path) -> io::Result<()> {
+    fn add_ignore_file(&mut self, path: &Utf8Path) -> io::Result<()> {
         let contents = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -107,16 +106,14 @@ impl Walker<'_> {
         Ok(())
     }
 
-    fn is_ignored(&self, path: &Path, is_dir: bool) -> bool {
-        // TODO: use encoded bytes?
-        let path = &*path.to_string_lossy();
+    fn is_ignored(&self, path: &Utf8Path, is_dir: bool) -> bool {
         let case = gix_ignore::glob::pattern::Case::Sensitive;
         self.ignore
-            .pattern_matching_relative_path(path.into(), Some(is_dir), case)
+            .pattern_matching_relative_path(path.as_str().into(), Some(is_dir), case)
             .is_some()
     }
 
-    fn step(&mut self, dir: &Path, enabled: ManagerSet) {
+    fn step(&mut self, dir: &Utf8Path, enabled: ManagerSet) {
         log::trace!("entering {}", self.display_path(dir));
 
         let local_ignore = dir.join(".gitignore");
@@ -143,33 +140,33 @@ impl Walker<'_> {
                 }
             };
 
-            let path = entry.path();
+            let path = Utf8PathBuf::try_from(entry.path()).unwrap();
             let relative = self.relative(&path).unwrap();
 
             let Ok(file_type) = entry.file_type() else {
-                log::warn!("failed to read type of file: {}", relative.display());
+                log::warn!("failed to read type of file: {relative}");
                 continue;
             };
             let file_type = FileType::from(file_type);
 
             if self.is_ignored(relative, file_type == FileType::Directory) {
-                log::debug!("ignoring {}", relative.display());
+                log::debug!("ignoring {relative}");
                 continue;
             }
 
             match file_type {
                 FileType::Unknown => {
-                    log::warn!("could not determine type: {}", relative.display());
+                    log::warn!("could not determine type: {relative}");
                 }
                 FileType::Symlink => {
-                    log::warn!("skipping symlink: {}", relative.display());
+                    log::warn!("skipping symlink: {relative}");
                 }
                 FileType::Directory => {
                     let mut new_enabled = enabled;
                     for (id, manager) in self.managers.iter().enumerate() {
                         let mask = 1 << (id as ManagerSet);
                         if (enabled & mask) > 0 && !manager.filter_directory(relative) {
-                            log::debug!("{}: disabling in {}", manager.name(), relative.display());
+                            log::debug!("{}: disabling in {relative}", manager.name());
                             new_enabled ^= mask;
                         }
                     }
@@ -183,7 +180,7 @@ impl Walker<'_> {
                         let id = id as ManagerSet;
                         let mask = 1 << id;
                         if (enabled & mask) > 0 && manager.filter_file(relative) {
-                            log::debug!("{}: registering {}", manager.name(), relative.display());
+                            log::debug!("{}: registering {relative}", manager.name());
                             self.out.push((id, path.clone()));
                         }
                     }

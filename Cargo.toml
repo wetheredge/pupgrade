@@ -5,6 +5,7 @@ edition = "2024"
 license = "MPL-2.0"
 
 [dependencies]
+camino = "=1.2.1"
 env_logger = { version = "=0.11.8", features = ["auto-color", "humantime"], default-features = false }
 facet = "=0.29.1"
 facet-json = "=0.29.1"

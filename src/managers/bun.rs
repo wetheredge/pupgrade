@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::path::Path;
 
+use camino::Utf8Path;
 use facet::Facet;
 
 use crate::summary;
@@ -15,11 +15,11 @@ impl super::Manager for Manager {
         "Bun"
     }
 
-    fn filter_file(&self, path: &Path) -> bool {
+    fn filter_file(&self, path: &Utf8Path) -> bool {
         path.file_name().is_some_and(|name| name == "package.json")
     }
 
-    fn scan_file(&mut self, file: &Path) {
+    fn scan_file(&mut self, file: &Utf8Path) {
         let package = std::fs::read(file).unwrap();
         let package = facet_json::from_slice::<Package>(&package).unwrap();
 
@@ -40,7 +40,7 @@ impl Manager {
         Self { deps: Vec::new() }
     }
 
-    fn scan_inner(&mut self, file: &Path, deps: Deps, category: Category) {
+    fn scan_inner(&mut self, file: &Utf8Path, deps: Deps, category: Category) {
         for (mut name, mut version) in deps {
             if version == "workspace:*" {
                 continue;
@@ -54,8 +54,7 @@ impl Manager {
                     version = actual_version.to_owned();
                 } else {
                     log::warn!(
-                        "{}: {category:?} dependency {name} looks like an override, but has no @",
-                        file.display()
+                        "{file}: {category:?} dependency {name} looks like an override, but has no @"
                     );
                     continue;
                 }
