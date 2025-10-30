@@ -40,35 +40,31 @@ fn markdown_summary(collector: &DepCollector) {
         eprintln!("{prefix} {title}\n");
     };
 
-    for root in collector.iter_root_groups() {
-        root.title(|title| eprint_heading(1, title));
+    let mut stack = Vec::new();
+    stack.push(collector.iter_root_groups().peekable());
+    while let Some(iter) = stack.last_mut() {
+        if let Some(group) = iter.next() {
+            let mut deps = group.iter_dependencies().peekable();
+            let mut subgroups = group.iter_subgroups().peekable();
 
-        let mut stack = Vec::new();
-        stack.push(root.iter_subgroups().peekable());
-        while let Some(iter) = stack.last_mut() {
-            if let Some(group) = iter.next() {
-                let mut deps = group.iter_dependencies().peekable();
-                let mut subgroups = group.iter_subgroups().peekable();
-
-                if deps.peek().is_some() || subgroups.peek().is_some() {
-                    let level = 1 + stack.len();
-                    group.title(|title| eprint_heading(level, title));
-                }
-
-                let mut any_deps = false;
-                for dep in deps {
-                    any_deps = true;
-                    eprintln!("- `{}`: {}", &dep.name, &dep.version);
-                }
-
-                if any_deps {
-                    eprintln!();
-                }
-
-                stack.push(subgroups);
-            } else {
-                stack.pop();
+            if deps.peek().is_some() || subgroups.peek().is_some() {
+                let level = stack.len();
+                group.title(|title| eprint_heading(level, title));
             }
+
+            let mut any_deps = false;
+            for dep in deps {
+                any_deps = true;
+                eprintln!("- `{}`: {}", &dep.name, &dep.version);
+            }
+
+            if any_deps {
+                eprintln!();
+            }
+
+            stack.push(subgroups);
+        } else {
+            stack.pop();
         }
     }
 }

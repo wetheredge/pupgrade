@@ -1,6 +1,6 @@
 mod bun;
 mod cargo;
-mod github_actions;
+mod galock;
 
 use camino::Utf8Path;
 
@@ -8,7 +8,7 @@ pub(crate) fn all() -> Vec<Box<dyn Manager>> {
     vec![
         Box::new(bun::Manager),
         Box::new(cargo::Manager),
-        Box::new(github_actions::Manager),
+        Box::new(galock::Manager),
     ]
 }
 

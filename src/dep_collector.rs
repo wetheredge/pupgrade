@@ -81,7 +81,7 @@ pub(crate) struct GroupRef<'a> {
     index: usize,
 }
 
-struct GroupIter<'a> {
+pub(crate) struct GroupIter<'a> {
     collector: &'a DepCollector,
     parent: Option<usize>,
     cursor: Option<usize>,
@@ -135,7 +135,7 @@ impl DepCollector {
         })
     }
 
-    pub(crate) fn iter_root_groups(&self) -> impl Iterator<Item = GroupRef<'_>> + use<'_> {
+    pub(crate) fn iter_root_groups(&self) -> GroupIter<'_> {
         GroupIter {
             collector: self,
             parent: None,
@@ -221,7 +221,7 @@ impl<'a> GroupRef<'a> {
         f(&id)
     }
 
-    pub(crate) fn iter_subgroups(&self) -> impl Iterator<Item = GroupRef<'a>> + use<'a> {
+    pub(crate) fn iter_subgroups(&self) -> GroupIter<'a> {
         GroupIter {
             collector: self.collector,
             parent: Some(self.index),
