@@ -10,6 +10,12 @@
       url = "github:rustsec/advisory-db";
       flake = false;
     };
+
+    galock = {
+      url = "git+https://tangled.org/@wetheredge.com/galock";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.flake-utils.follows = "flake-utils";
+    };
   };
 
   outputs =
@@ -19,6 +25,7 @@
       crane,
       flake-utils,
       advisory-db,
+      galock,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -35,7 +42,9 @@
           inherit src;
           strictDeps = true;
 
-          buildInputs = lib.optionals pkgs.stdenv.isDarwin [
+          buildInputs = [
+            galock.packages.${system}.default
+          ] ++ lib.optionals pkgs.stdenv.isDarwin [
             pkgs.libiconv
           ];
         };
@@ -111,9 +120,6 @@
 
         devShells.default = craneLib.devShell {
           checks = self.checks.${system};
-
-          # packages = with pkgs; [
-          # ];
         };
       }
     );
