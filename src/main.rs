@@ -1,3 +1,4 @@
+mod cli;
 mod dep_collector;
 mod managers;
 mod walker;
@@ -7,22 +8,47 @@ use camino::Utf8PathBuf;
 use self::dep_collector::DepCollector;
 use self::managers::Manager;
 
-fn main() {
+fn main() -> Result<(), anyhow::Error> {
     init_logger();
 
-    let mut managers = managers::all();
-    let root = Utf8PathBuf::try_from(std::env::current_dir().unwrap()).unwrap();
-    let files = walker::walk(&root, &managers);
-
-    let collector = DepCollector::new();
-    for (manager, paths) in files.iter().enumerate() {
-        let manager = &mut managers[manager];
-        for path in paths {
-            manager.scan_file(path, &collector);
-        }
+    let cli = cli::parse()?;
+    if let Some(cwd) = cli.cwd {
+        std::env::set_current_dir(cwd).unwrap();
     }
 
-    markdown_summary(&collector);
+    let mut managers = managers::all();
+
+    match cli.action {
+        cli::Action::Usage { requested } => {
+            eprintln!("{}", cli::USAGE);
+            if !requested {
+                std::process::exit(1);
+            }
+        }
+
+        cli::Action::Init => {
+            let root = Utf8PathBuf::try_from(std::env::current_dir().unwrap()).unwrap();
+            let files = walker::walk(&root, &managers);
+
+            let collector = DepCollector::new();
+            for (manager, paths) in files.iter().enumerate() {
+                let manager = &mut managers[manager];
+                for path in paths {
+                    manager.scan_file(path, &collector);
+                }
+            }
+
+            markdown_summary(&collector);
+        }
+
+        cli::Action::Edit => todo!(),
+
+        cli::Action::Summarize => todo!(),
+
+        cli::Action::Finish => todo!(),
+    }
+
+    Ok(())
 }
 
 fn init_logger() {
