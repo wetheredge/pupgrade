@@ -71,7 +71,7 @@ fn scan_inner(file: &Utf8Path, group: &GroupHandle, deps: Deps) {
                 name = actual_name.to_owned();
                 version = actual_version.to_owned();
             } else {
-                let group_id = group.as_ref().full_id(|id| id.join("."));
+                let group_id = group.full_id(|id| id.join("."));
                 log::warn!(
                     "{file}: {group_id} dependency {name} looks like an override but has no @"
                 );

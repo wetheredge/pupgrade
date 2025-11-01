@@ -1,11 +1,12 @@
 mod cli;
 mod dep_collector;
+mod editor;
 mod managers;
 mod walker;
 
 use camino::Utf8PathBuf;
 
-use self::dep_collector::{DepCollector, Deps};
+use self::dep_collector::{DepCollector, Deps, DepsBuilder};
 use self::managers::Manager;
 
 static STATE_FILE: &str = ".updater.json";
@@ -32,7 +33,7 @@ fn main() -> Result<(), anyhow::Error> {
             let root = Utf8PathBuf::try_from(std::env::current_dir().unwrap()).unwrap();
             let files = walker::walk(&root, &managers);
 
-            let deps = Deps::new();
+            let deps = DepsBuilder::new();
             for (manager_id, paths) in files.iter().enumerate() {
                 let manager = &managers[manager_id];
                 for path in paths {
@@ -40,16 +41,18 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
 
-            std::fs::write(STATE_FILE, &deps.serialize())?;
+            save_state(deps.into())?;
         }
 
-        cli::Action::Edit => todo!(),
+        cli::Action::Edit => {
+            let mut state = load_state()?;
+            editor::run(ratatui::init(), &mut state)?;
+            ratatui::restore();
+            save_state(state)?;
+        }
 
         cli::Action::Summarize => {
-            let raw = std::fs::read_to_string(STATE_FILE)?;
-            let deps = Deps::deserialize(&raw).map_err(facet_json::DeserError::into_owned)?;
-
-            markdown_summary(&deps);
+            markdown_summary(&load_state()?);
         }
 
         cli::Action::Finish => match std::fs::remove_file(STATE_FILE) {
@@ -71,6 +74,17 @@ fn init_logger() {
         .init();
 }
 
+fn load_state() -> anyhow::Result<Deps> {
+    let raw = std::fs::read_to_string(STATE_FILE)?;
+    let deps = Deps::deserialize(&raw).map_err(facet_json::DeserError::into_owned)?;
+    Ok(deps)
+}
+
+fn save_state(deps: Deps) -> anyhow::Result<()> {
+    std::fs::write(STATE_FILE, &deps.serialize())?;
+    Ok(())
+}
+
 fn markdown_summary(collector: &Deps) {
     let eprint_heading = |level, title: &_| {
         let prefix = "#".repeat(level);
@@ -86,7 +100,7 @@ fn markdown_summary(collector: &Deps) {
 
             if deps.peek().is_some() || subgroups.peek().is_some() {
                 let level = stack.len();
-                group.title(|title| eprint_heading(level, title));
+                eprint_heading(level, group.title());
             }
 
             let mut any_deps = false;
