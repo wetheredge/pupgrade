@@ -8,6 +8,8 @@ use camino::Utf8PathBuf;
 use self::dep_collector::DepCollector;
 use self::managers::Manager;
 
+static STATE_FILE: &str = ".updater.json";
+
 fn main() -> Result<(), anyhow::Error> {
     init_logger();
 
@@ -16,7 +18,7 @@ fn main() -> Result<(), anyhow::Error> {
         std::env::set_current_dir(cwd).unwrap();
     }
 
-    let mut managers = managers::all();
+    let managers = managers::all();
 
     match cli.action {
         cli::Action::Usage { requested } => {
@@ -32,20 +34,31 @@ fn main() -> Result<(), anyhow::Error> {
 
             let collector = DepCollector::new();
             for (manager, paths) in files.iter().enumerate() {
-                let manager = &mut managers[manager];
+                let manager = &managers[manager];
                 for path in paths {
                     manager.scan_file(path, &collector);
                 }
             }
 
-            markdown_summary(&collector);
+            let deps = collector.serialize();
+            std::fs::write(STATE_FILE, &deps)?;
         }
 
         cli::Action::Edit => todo!(),
 
-        cli::Action::Summarize => todo!(),
+        cli::Action::Summarize => {
+            let raw = std::fs::read_to_string(STATE_FILE)?;
+            let deps =
+                DepCollector::deserialize(&raw).map_err(facet_json::DeserError::into_owned)?;
 
-        cli::Action::Finish => todo!(),
+            markdown_summary(&deps);
+        }
+
+        cli::Action::Finish => match std::fs::remove_file(STATE_FILE) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => return Err(err.into()),
+        },
     }
 
     Ok(())

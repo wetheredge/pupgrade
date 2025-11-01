@@ -22,18 +22,21 @@ struct FacetDepCollector {
 struct Group {
     id: String,
     title: String,
+    #[facet(skip_serializing_if = Option::is_none, default)]
     parent: Option<usize>,
-    #[facet(skip, default)]
+    #[facet(skip_serializing, default)]
     locked: bool,
 }
 
 #[derive(Facet)]
 pub(crate) struct Dep {
     pub(crate) manager: usize,
+    #[facet(skip_serializing_if = |b| *b == false, default)]
     pub(crate) skip: bool,
     group: usize,
 
     pub(crate) name: String,
+    #[facet(skip_serializing_if = Option::is_none, default)]
     pub(crate) renamed: Option<String>,
     pub(crate) version: Version,
     pub(crate) updates: Option<Version>,
@@ -141,6 +144,14 @@ impl DepCollector {
             parent: None,
             cursor: Some(0),
         }
+    }
+
+    pub(crate) fn serialize(self) -> String {
+        facet_json::to_string(&FacetDepCollector::from(self))
+    }
+
+    pub(crate) fn deserialize(s: &str) -> Result<Self, facet_json::DeserError<'_>> {
+        facet_json::from_str::<FacetDepCollector>(s).map(Self::from)
     }
 }
 
