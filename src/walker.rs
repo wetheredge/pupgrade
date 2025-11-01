@@ -24,7 +24,7 @@ pub(crate) fn walk(root: &Utf8Path, managers: &[Box<dyn Manager>]) -> Box<[Vec<U
 
 type ManagerSet = u8;
 
-const IGNORE_SETTINGS: gix_ignore::search::Ignore = gix_ignore::search::Ignore {
+const IGNORE_SETTINGS: gix::ignore::search::Ignore = gix::ignore::search::Ignore {
     support_precious: false,
 };
 static IMPLICIT_IGNORES: &[u8] = br"
@@ -36,13 +36,13 @@ struct Walker<'a> {
     root: &'a Utf8Path,
     managers: &'a [Box<dyn Manager>],
 
-    ignore: gix_ignore::Search,
+    ignore: gix::ignore::Search,
     out: Vec<(ManagerSet, Utf8PathBuf)>,
 }
 
 impl<'a> Walker<'a> {
     fn new(root: &'a Utf8Path, managers: &'a [Box<dyn Manager>]) -> Self {
-        let mut ignore = gix_ignore::Search::from_git_dir(
+        let mut ignore = gix::ignore::Search::from_git_dir(
             &root.join(".git").into_std_path_buf(),
             None,
             &mut Vec::new(),
@@ -107,7 +107,7 @@ impl Walker<'_> {
     }
 
     fn is_ignored(&self, path: &Utf8Path, is_dir: bool) -> bool {
-        let case = gix_ignore::glob::pattern::Case::Sensitive;
+        let case = gix::ignore::glob::pattern::Case::Sensitive;
         self.ignore
             .pattern_matching_relative_path(path.as_str().into(), Some(is_dir), case)
             .is_some()

@@ -39,7 +39,18 @@ pub(crate) struct Dep {
     #[facet(skip_serializing_if = is_default, default)]
     pub(crate) renamed: Option<String>,
     pub(crate) version: Version,
-    pub(crate) updates: Option<Version>,
+    #[facet(skip_serializing_if = Updates::is_none, default)]
+    pub(crate) updates: Updates,
+}
+
+#[derive(Facet, Default)]
+#[repr(u8)]
+pub(crate) enum Updates {
+    #[default]
+    None,
+    #[expect(unused)]
+    Failed,
+    Found(Version),
 }
 
 pub(crate) struct DepInit {
@@ -67,6 +78,12 @@ pub(crate) enum Version {
 }
 
 #[derive(Facet)]
+pub(crate) struct UpdatePair<'a> {
+    old: &'a Version,
+    new: &'a Updates,
+}
+
+#[derive(Facet)]
 struct Lockfile {
     manager: usize,
     path: PathBuf,
@@ -83,6 +100,10 @@ impl Deps {
 
     pub(crate) fn deps(&self) -> &[Dep] {
         &self.deps
+    }
+
+    pub(crate) fn deps_mut(&mut self) -> &mut [Dep] {
+        &mut self.deps
     }
 
     pub(crate) fn path(&self, id: usize) -> &Utf8Path {
@@ -102,6 +123,10 @@ impl DepsBuilder {
             deps: boxcar::Vec::new(),
             lockfiles: boxcar::Vec::new(),
         }
+    }
+
+    pub(crate) fn count(&self) -> usize {
+        self.deps.count()
     }
 
     pub(crate) fn collector(&self, manager: usize) -> DepCollector<'_> {
@@ -135,36 +160,46 @@ impl DepCollector<'_> {
             name: init.name,
             renamed: init.renamed,
             version: init.version,
-            updates: None,
+            updates: Updates::None,
         });
-    }
-}
-
-impl Version {
-    pub(crate) fn commit(&self) -> Option<&str> {
-        match self {
-            Self::SemVer(_) => None,
-            Self::GitCommit { commit, .. } => Some(commit),
-            Self::GitPinnedTag { commit, .. } => Some(commit),
-        }
-    }
-
-    pub(crate) fn repo(&self) -> Option<&str> {
-        match self {
-            Self::SemVer(_) => None,
-            Self::GitCommit { repo, .. } => Some(repo),
-            Self::GitPinnedTag { repo, .. } => Some(repo),
-        }
     }
 }
 
 impl fmt::Display for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let write_commit = |f: &mut fmt::Formatter, hash: &str| {
+            let hash = if hash.is_ascii() && hash.len() >= 8 {
+                &hash[0..8]
+            } else {
+                hash
+            };
+
+            if f.alternate() {
+                write!(f, "`{hash}`")
+            } else {
+                f.write_str(hash)
+            }
+        };
+
         match self {
-            Self::SemVer(semver) => f.write_str(semver),
-            Self::GitCommit { .. } => todo!(),
-            Self::GitPinnedTag { .. } => todo!(),
+            Version::SemVer(semver) => f.write_str(semver),
+            Version::GitCommit { commit, .. } => write_commit(f, commit),
+            Version::GitPinnedTag { commit, tag, .. } => {
+                f.write_str(tag)?;
+                f.write_str(" @ ")?;
+                write_commit(f, commit)
+            }
         }
+    }
+}
+
+impl Updates {
+    /// Returns `true` if `self` is [`None`].
+    ///
+    /// [`None`]: Updates::None
+    #[must_use]
+    pub(crate) fn is_none(&self) -> bool {
+        matches!(self, Self::None)
     }
 }
 

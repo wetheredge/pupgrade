@@ -1,6 +1,6 @@
 use std::io::{self, Write};
 
-use crate::dep_collector::{Dep, Deps, Version};
+use crate::dep_collector::{Dep, Deps, Updates};
 
 pub(crate) fn write_markdown(collector: &Deps, out: &mut impl Write) -> io::Result<()> {
     let managers = crate::managers::all();
@@ -34,83 +34,30 @@ pub(crate) fn write_markdown(collector: &Deps, out: &mut impl Write) -> io::Resu
             "✔️"
         };
 
-        write!(out, "| {status} | `{name}` | ", name = &row.name,)?;
+        write!(
+            out,
+            "| {status} | `{name}` | {version:#} | ",
+            name = &row.name,
+            version = &row.version,
+        )?;
 
-        let detail = row
-            .updates
-            .as_ref()
-            .and_then(|new| {
-                fn differs(
-                    f: impl Fn(&Version) -> Option<&str>,
-                    old: &Version,
-                    new: &Version,
-                ) -> bool {
-                    f(old).zip(f(new)).is_some_and(|(old, new)| old != new)
-                }
-                let old = &row.version;
-                if differs(Version::repo, old, new) {
-                    Some(Detail::Repo)
-                } else if differs(Version::commit, old, new) {
-                    Some(Detail::Commit)
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_default();
-
-        write_version(out, &row.version, detail)?;
-        write!(out, " | ")?;
-        if let Some(new) = row.updates.as_ref() {
-            write_version(out, new, detail)?;
+        match &row.updates {
+            Updates::None => {}
+            Updates::Failed => write!(out, "*failed*")?,
+            Updates::Found(version) => write!(out, "{version:#}")?,
         }
 
+        let has_path = row.path.is_some();
         writeln!(
             out,
-            " | {manager} | {path} | {kind} |",
+            " | {manager} | {p_tick}{p_slash}{path}{p_tick} | {kind} |",
             manager = managers[row.manager].name(),
             path = get_path_str(row),
+            p_tick = if has_path { "`" } else { "" },
+            p_slash = if has_path { "/" } else { "" },
             kind = get_kind_str(row),
         )?;
     }
 
     Ok(())
-}
-
-fn short_hash(commit: &str) -> &str {
-    if commit.is_ascii() {
-        &commit[0..commit.len().min(8)]
-    } else {
-        commit
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Detail {
-    #[default]
-    Tag,
-    Commit,
-    Repo,
-}
-
-fn write_version(out: &mut impl Write, version: &Version, detail: Detail) -> io::Result<()> {
-    match version {
-        Version::SemVer(version) => write!(out, "{version}"),
-        Version::GitCommit { repo, commit } => {
-            write!(out, "`{}`", short_hash(commit))?;
-            if detail == Detail::Repo {
-                write!(out, " ({repo})")?;
-            }
-            Ok(())
-        }
-        Version::GitPinnedTag { repo, commit, tag } => {
-            write!(out, "{tag}")?;
-            if detail >= Detail::Commit {
-                write!(out, "@`{}`", short_hash(commit))?;
-                if detail == Detail::Repo {
-                    write!(out, " ({repo})")?;
-                }
-            }
-            Ok(())
-        }
-    }
 }

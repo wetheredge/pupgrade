@@ -9,7 +9,7 @@ use std::io::{self, BufWriter};
 
 use anyhow::Context as _;
 
-use self::dep_collector::{DepCollector, Deps, DepsBuilder};
+use self::dep_collector::{Dep, DepCollector, Deps, DepsBuilder};
 use self::managers::Manager;
 
 static STATE_FILE: &str = ".updater.json";
@@ -50,7 +50,15 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
 
-            save_state(deps.into())?;
+            log::info!("Found {} dependencies", deps.count());
+
+            let mut deps = Deps::from(deps);
+            for dep in deps.deps_mut() {
+                log::info!("Finding updates for {}", &dep.name);
+                dep.updates = managers[dep.manager].find_updates(dep);
+            }
+
+            save_state(deps)?;
         }
 
         cli::Action::Edit => {

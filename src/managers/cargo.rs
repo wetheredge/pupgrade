@@ -1,10 +1,12 @@
 use std::fmt;
+use std::io::{BufRead, BufReader};
 
 use camino::Utf8Path;
+use facet::Facet;
 use taplo::dom::{Node, node};
 
 use crate::DepCollector;
-use crate::dep_collector::DepInit;
+use crate::dep_collector::{DepInit, Updates, Version};
 
 pub(super) struct Manager;
 
@@ -18,7 +20,7 @@ impl super::Manager for Manager {
     }
 
     fn scan_file(&self, path: &Utf8Path, collector: DepCollector<'_>) {
-        let path_id = collector.push_path(path.into());
+        let path_id = collector.push_path(path.parent().unwrap().into());
 
         let toml = std::fs::read_to_string(path).unwrap();
 
@@ -76,6 +78,46 @@ impl super::Manager for Manager {
             scan_inner(collector, path_id, kind_id, table);
         });
     }
+
+    fn find_updates(&self, dep: &crate::Dep) -> Updates {
+        match &dep.version {
+            Version::SemVer(current) => {
+                let host = "https://index.crates.io";
+
+                // NOTE: assumes name is ascii
+                let uri = match dep.name.len() {
+                    0 => unreachable!(),
+                    1 => format!("{host}/1/{}", &dep.name),
+                    2 => format!("{host}/2/{}", &dep.name),
+                    3 => format!("{host}/3/{}/{}", &dep.name[0..1], &dep.name),
+                    _ => format!(
+                        "{host}/{}/{}/{}",
+                        &dep.name[0..2],
+                        &dep.name[2..4],
+                        &dep.name
+                    ),
+                };
+
+                let mut response = ureq::get(uri).call().unwrap();
+                let body = response.body_mut().as_reader();
+                let mut crates = BufReader::new(body)
+                    .lines()
+                    .filter_map(|line| facet_json::from_str(&line.ok()?).ok())
+                    .collect::<Vec<Crate>>();
+
+                let Crate { vers: latest } = crates.pop().unwrap();
+
+                let current = current.strip_prefix('=').unwrap_or(current);
+                if current == latest {
+                    Updates::None
+                } else {
+                    Updates::Found(Version::SemVer(format!("={latest}")))
+                }
+            }
+            Version::GitCommit { .. } => todo!(),
+            Version::GitPinnedTag { .. } => todo!(),
+        }
+    }
 }
 
 fn scan_inner(collector: DepCollector, path_id: usize, kind_id: usize, table: &node::Table) {
@@ -122,6 +164,11 @@ fn scan_inner(collector: DepCollector, path_id: usize, kind_id: usize, table: &n
             version,
         });
     }
+}
+
+#[derive(Facet)]
+struct Crate {
+    vers: String,
 }
 
 struct FullKey<'a> {

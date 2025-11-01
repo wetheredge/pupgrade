@@ -4,7 +4,7 @@ use camino::Utf8Path;
 use facet::Facet;
 
 use crate::DepCollector;
-use crate::dep_collector::{DepInit, Version};
+use crate::dep_collector::{DepInit, Updates, Version};
 
 pub(super) struct Manager;
 
@@ -51,6 +51,27 @@ impl super::Manager for Manager {
         scan_inner!(short optional, "Optional");
         scan_inner!(overrides, "Overrides");
     }
+
+    fn find_updates(&self, dep: &crate::Dep) -> Updates {
+        match &dep.version {
+            Version::SemVer(current) => {
+                let data = ureq::get(format!("https://registry.npmjs.org/{}/latest", &dep.name))
+                    .call()
+                    .unwrap()
+                    .into_body()
+                    .read_to_vec()
+                    .unwrap();
+                let RegistryData { version } = facet_json::from_slice(&data).unwrap();
+                if current == &version {
+                    Updates::None
+                } else {
+                    Updates::Found(Version::SemVer(version))
+                }
+            }
+            Version::GitCommit { .. } => todo!(),
+            Version::GitPinnedTag { .. } => todo!(),
+        }
+    }
 }
 
 fn scan_inner(collector: DepCollector<'_>, path_id: usize, kind_id: usize, deps: Deps) {
@@ -94,3 +115,8 @@ struct Package {
 }
 
 type Deps = HashMap<String, String>;
+
+#[derive(Debug, Facet)]
+struct RegistryData {
+    version: String,
+}
