@@ -5,7 +5,7 @@ mod walker;
 
 use camino::Utf8PathBuf;
 
-use self::dep_collector::DepCollector;
+use self::dep_collector::{DepCollector, Deps};
 use self::managers::Manager;
 
 static STATE_FILE: &str = ".updater.json";
@@ -32,24 +32,22 @@ fn main() -> Result<(), anyhow::Error> {
             let root = Utf8PathBuf::try_from(std::env::current_dir().unwrap()).unwrap();
             let files = walker::walk(&root, &managers);
 
-            let collector = DepCollector::new();
-            for (manager, paths) in files.iter().enumerate() {
-                let manager = &managers[manager];
+            let deps = Deps::new();
+            for (manager_id, paths) in files.iter().enumerate() {
+                let manager = &managers[manager_id];
                 for path in paths {
-                    manager.scan_file(path, &collector);
+                    manager.scan_file(path, deps.collector(manager_id));
                 }
             }
 
-            let deps = collector.serialize();
-            std::fs::write(STATE_FILE, &deps)?;
+            std::fs::write(STATE_FILE, &deps.serialize())?;
         }
 
         cli::Action::Edit => todo!(),
 
         cli::Action::Summarize => {
             let raw = std::fs::read_to_string(STATE_FILE)?;
-            let deps =
-                DepCollector::deserialize(&raw).map_err(facet_json::DeserError::into_owned)?;
+            let deps = Deps::deserialize(&raw).map_err(facet_json::DeserError::into_owned)?;
 
             markdown_summary(&deps);
         }
@@ -73,7 +71,7 @@ fn init_logger() {
         .init();
 }
 
-fn markdown_summary(collector: &DepCollector) {
+fn markdown_summary(collector: &Deps) {
     let eprint_heading = |level, title: &_| {
         let prefix = "#".repeat(level);
         eprintln!("{prefix} {title}\n");

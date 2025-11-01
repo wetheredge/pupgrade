@@ -5,14 +5,19 @@ use std::fmt;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-pub(crate) struct DepCollector {
+pub(crate) struct DepCollector<'a> {
+    data: &'a Deps,
+    manager: usize,
+}
+
+pub(crate) struct Deps {
     groups: Mutex<Vec<Group>>,
     deps: boxcar::Vec<Dep>,
     lockfiles: boxcar::Vec<Lockfile>,
 }
 
 #[derive(Facet)]
-struct FacetDepCollector {
+struct FacetDeps {
     groups: Vec<Group>,
     deps: Vec<Dep>,
     lockfiles: Vec<Lockfile>,
@@ -74,18 +79,18 @@ pub(crate) struct GroupExistsError;
 
 /// Reference to a [`Group`] that *does* prevent creation of new subgroups.
 pub(crate) struct GroupHandle<'a> {
-    collector: &'a DepCollector,
+    collector: &'a DepCollector<'a>,
     index: usize,
 }
 
 /// Reference to a [`Group`] that *does not* prevent creation of new subgroups.
 pub(crate) struct GroupRef<'a> {
-    collector: &'a DepCollector,
+    collector: &'a Deps,
     index: usize,
 }
 
 pub(crate) struct GroupIter<'a> {
-    collector: &'a DepCollector,
+    data: &'a Deps,
     parent: Option<usize>,
     cursor: Option<usize>,
 }
@@ -95,7 +100,7 @@ struct DepIter<'a> {
     group: usize,
 }
 
-impl DepCollector {
+impl Deps {
     pub(crate) fn new() -> Self {
         Self {
             groups: Mutex::new(Vec::new()),
@@ -104,12 +109,37 @@ impl DepCollector {
         }
     }
 
+    pub(crate) fn serialize(self) -> String {
+        facet_json::to_string(&FacetDeps::from(self))
+    }
+
+    pub(crate) fn deserialize(s: &str) -> Result<Self, facet_json::DeserError<'_>> {
+        facet_json::from_str::<FacetDeps>(s).map(Self::from)
+    }
+
+    pub(crate) fn iter_root_groups(&self) -> GroupIter<'_> {
+        GroupIter {
+            data: self,
+            parent: None,
+            cursor: Some(0),
+        }
+    }
+
+    pub(crate) fn collector(&self, manager: usize) -> DepCollector<'_> {
+        DepCollector {
+            data: self,
+            manager,
+        }
+    }
+}
+
+impl DepCollector<'_> {
     pub(crate) fn get_group<'a>(
         &'a self,
         id: Cow<'_, str>,
         title: impl FnOnce() -> String,
     ) -> Result<GroupHandle<'a>, LockedGroupError> {
-        let mut groups = self.groups.lock().unwrap();
+        let mut groups = self.data.groups.lock().unwrap();
 
         for (index, group) in groups.iter_mut().enumerate() {
             if group.parent.is_none() && group.id == id {
@@ -137,28 +167,12 @@ impl DepCollector {
             index,
         })
     }
-
-    pub(crate) fn iter_root_groups(&self) -> GroupIter<'_> {
-        GroupIter {
-            collector: self,
-            parent: None,
-            cursor: Some(0),
-        }
-    }
-
-    pub(crate) fn serialize(self) -> String {
-        facet_json::to_string(&FacetDepCollector::from(self))
-    }
-
-    pub(crate) fn deserialize(s: &str) -> Result<Self, facet_json::DeserError<'_>> {
-        facet_json::from_str::<FacetDepCollector>(s).map(Self::from)
-    }
 }
 
 impl<'a> GroupHandle<'a> {
     pub(crate) fn as_ref(&self) -> GroupRef<'a> {
         GroupRef {
-            collector: self.collector,
+            collector: self.collector.data,
             index: self.index,
         }
     }
@@ -168,7 +182,7 @@ impl<'a> GroupHandle<'a> {
         id: String,
         title: String,
     ) -> Result<GroupHandle<'a>, GroupExistsError> {
-        let mut groups = self.collector.groups.lock().unwrap();
+        let mut groups = self.collector.data.groups.lock().unwrap();
 
         let exists = groups
             .iter()
@@ -192,8 +206,8 @@ impl<'a> GroupHandle<'a> {
     }
 
     pub(crate) fn push_dep(&self, name: String, renamed: Option<String>, version: Version) {
-        self.collector.deps.push(Dep {
-            manager: 0, // FIXME
+        self.collector.data.deps.push(Dep {
+            manager: self.collector.manager,
             skip: false,
             group: self.index,
             name,
@@ -206,7 +220,7 @@ impl<'a> GroupHandle<'a> {
 
 impl Drop for GroupHandle<'_> {
     fn drop(&mut self) {
-        if let Ok(mut groups) = self.collector.groups.lock() {
+        if let Ok(mut groups) = self.collector.data.groups.lock() {
             groups[self.index].locked = false;
         }
     }
@@ -234,7 +248,7 @@ impl<'a> GroupRef<'a> {
 
     pub(crate) fn iter_subgroups(&self) -> GroupIter<'a> {
         GroupIter {
-            collector: self.collector,
+            data: self.collector,
             parent: Some(self.index),
             cursor: Some(self.index + 1),
         }
@@ -254,7 +268,7 @@ impl<'a> Iterator for GroupIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         let cursor = self.cursor.as_mut()?;
 
-        let groups = self.collector.groups.lock().unwrap();
+        let groups = self.data.groups.lock().unwrap();
 
         if let Some(index) = groups
             .iter()
@@ -264,7 +278,7 @@ impl<'a> Iterator for GroupIter<'a> {
         {
             *cursor = index + 1;
             Some(GroupRef {
-                collector: self.collector,
+                collector: self.data,
                 index,
             })
         } else {
@@ -294,8 +308,8 @@ impl fmt::Display for Version {
     }
 }
 
-impl From<DepCollector> for FacetDepCollector {
-    fn from(plain: DepCollector) -> Self {
+impl From<Deps> for FacetDeps {
+    fn from(plain: Deps) -> Self {
         Self {
             groups: plain.groups.into_inner().unwrap().into_iter().collect(),
             deps: plain.deps.into_iter().collect(),
@@ -304,8 +318,8 @@ impl From<DepCollector> for FacetDepCollector {
     }
 }
 
-impl From<FacetDepCollector> for DepCollector {
-    fn from(facet: FacetDepCollector) -> Self {
+impl From<FacetDeps> for Deps {
+    fn from(facet: FacetDeps) -> Self {
         Self {
             groups: Mutex::new(facet.groups.into_iter().collect()),
             deps: facet.deps.into_iter().collect(),

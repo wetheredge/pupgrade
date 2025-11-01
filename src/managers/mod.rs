@@ -21,5 +21,5 @@ pub(crate) trait Manager {
 
     fn walk_file(&self, path: &Utf8Path) -> bool;
 
-    fn scan_file(&self, path: &Utf8Path, collector: &crate::DepCollector);
+    fn scan_file(&self, path: &Utf8Path, collector: crate::DepCollector<'_>);
 }

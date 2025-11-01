@@ -17,7 +17,7 @@ impl super::Manager for Manager {
         path.file_name().is_some_and(|name| name == "galock.toml")
     }
 
-    fn scan_file(&self, _path: &Utf8Path, collector: &crate::DepCollector) {
+    fn scan_file(&self, _path: &Utf8Path, collector: crate::DepCollector<'_>) {
         let group = collector
             .get_group("galock.actions".into(), || "GitHub Actions".to_owned())
             .unwrap();

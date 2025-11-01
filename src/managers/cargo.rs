@@ -16,7 +16,7 @@ impl super::Manager for Manager {
         path.file_name().is_some_and(|name| name == "Cargo.toml")
     }
 
-    fn scan_file(&self, path: &Utf8Path, collector: &crate::DepCollector) {
+    fn scan_file(&self, path: &Utf8Path, collector: crate::DepCollector<'_>) {
         let root = collector
             .get_group("cargo".into(), || "Cargo".to_owned())
             .unwrap();
