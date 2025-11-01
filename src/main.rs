@@ -4,7 +4,7 @@ mod editor;
 mod managers;
 mod walker;
 
-use camino::Utf8PathBuf;
+use anyhow::Context as _;
 
 use self::dep_collector::{DepCollector, Deps, DepsBuilder};
 use self::managers::Manager;
@@ -15,9 +15,16 @@ fn main() -> Result<(), anyhow::Error> {
     init_logger();
 
     let cli = cli::parse()?;
-    if let Some(cwd) = cli.cwd {
-        std::env::set_current_dir(cwd).unwrap();
-    }
+
+    let cwd = if let Some(cwd) = cli.cwd {
+        std::env::set_current_dir(&cwd).context("setting cwd")?;
+        cwd
+    } else {
+        std::env::current_dir()
+            .context("getting cwd")?
+            .try_into()
+            .context("converting cwd to UTF-8")?
+    };
 
     let managers = managers::all();
 
@@ -30,8 +37,7 @@ fn main() -> Result<(), anyhow::Error> {
         }
 
         cli::Action::Init => {
-            let root = Utf8PathBuf::try_from(std::env::current_dir().unwrap()).unwrap();
-            let files = walker::walk(&root, &managers);
+            let files = walker::walk(&cwd, &managers);
 
             let deps = DepsBuilder::new();
             for (manager_id, paths) in files.iter().enumerate() {
@@ -75,13 +81,15 @@ fn init_logger() {
 }
 
 fn load_state() -> anyhow::Result<Deps> {
-    let raw = std::fs::read_to_string(STATE_FILE)?;
-    let deps = Deps::deserialize(&raw).map_err(facet_json::DeserError::into_owned)?;
+    let raw = std::fs::read_to_string(STATE_FILE).context("reading state")?;
+    let deps = Deps::deserialize(&raw)
+        .map_err(facet_json::DeserError::into_owned)
+        .context("deserializing state")?;
     Ok(deps)
 }
 
 fn save_state(deps: Deps) -> anyhow::Result<()> {
-    std::fs::write(STATE_FILE, &deps.serialize())?;
+    std::fs::write(STATE_FILE, &deps.serialize()).context("writing state")?;
     Ok(())
 }
 
