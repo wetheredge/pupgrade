@@ -95,11 +95,11 @@
         "zls": "zls"
       },
       "locked": {
-        "lastModified": 1761957108,
-        "narHash": "sha256-ZTGKmg02V35mXZyU9ClFfayXb3LT8XSch2QOlKYQ07c=",
+        "lastModified": 1762215707,
+        "narHash": "sha256-/BR7IwaSvqNzL+IMktkEnNTHWy3/rRtbmuAD7phTs3w=",
         "ref": "refs/heads/main",
-        "rev": "f9f3ac8e9345d3a84e7e5f32d96aeb2b0a01d890",
-        "revCount": 16,
+        "rev": "83543c880af268bf84974fce95d5f39d842a8b6c",
+        "revCount": 17,
         "type": "git",
         "url": "https://tangled.org/@wetheredge.com/galock"
       },

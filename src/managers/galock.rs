@@ -22,16 +22,31 @@ impl super::Manager for Manager {
             .get_or_push_group("GitHub Actions".into(), GroupFormat::Plain)
             .unwrap();
 
-        let actions = duct::cmd!("galock", "list")
+        #[derive(facet::Facet)]
+        struct Action<'a> {
+            repo: &'a str,
+            tag: &'a str,
+            commit: &'a str,
+        }
+
+        let json = duct::cmd!("galock", "list", "--json")
             .stdin_null()
             .stderr_null()
             .stdout_capture()
             .read()
             .unwrap();
+        let actions: Vec<Action> = facet_json::from_str(&json).unwrap();
 
-        for line in actions.lines() {
-            let (action, tag) = line.split_once('@').unwrap();
-            group.push_dep(action.to_owned(), None, Version::SemVer(tag.to_owned()));
+        for action in actions {
+            group.push_dep(
+                action.repo.to_owned(),
+                None,
+                Version::GitPinnedTag {
+                    repo: action.repo.to_owned(),
+                    commit: action.commit.to_owned(),
+                    tag: action.tag.to_owned(),
+                },
+            );
         }
     }
 }
