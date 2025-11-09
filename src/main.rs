@@ -98,16 +98,14 @@ fn save_state(deps: Deps) -> anyhow::Result<()> {
 
 fn markdown_summary(collector: &Deps, out: &mut impl Write) -> io::Result<()> {
     let mut stack = Vec::new();
-    stack.push(collector.iter_root_groups().peekable());
+    stack.push(collector.iter_root_groups());
     while let Some(iter) = stack.last_mut() {
         if let Some(group) = iter.next() {
-            let mut deps = group.iter_dependencies().peekable();
-            let mut subgroups = group.iter_subgroups().peekable();
+            let deps = group.iter_dependencies();
+            let subgroups = group.iter_subgroups();
 
-            if deps.peek().is_some() || subgroups.peek().is_some() {
-                let prefix = "#".repeat(stack.len());
-                writeln!(out, "{prefix} {}\n", group.title())?;
-            }
+            let prefix = "#".repeat(stack.len());
+            writeln!(out, "{prefix} {}\n", group.title())?;
 
             let mut any_deps = false;
             for dep in deps {

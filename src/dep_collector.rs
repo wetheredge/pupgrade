@@ -295,20 +295,44 @@ impl fmt::Display for Version {
 
 impl From<DepsBuilder> for Deps {
     fn from(plain: DepsBuilder) -> Self {
-        Self {
-            groups: plain.groups.into_inner().unwrap().into_iter().collect(),
-            deps: plain.deps.into_iter().collect(),
-            lockfiles: plain.lockfiles.into_iter().collect(),
-        }
-    }
-}
+        let groups = plain.groups.into_inner().unwrap();
 
-impl From<Deps> for DepsBuilder {
-    fn from(facet: Deps) -> Self {
+        let mut group_is_empty = vec![true; groups.len()];
+        for (_, dep) in &plain.deps {
+            let mut group = Some(dep.group);
+            while let Some(id) = group.take() {
+                if group_is_empty[id] {
+                    // Haven't been to this group before, so continue upwards
+                    group = groups[id].parent;
+                }
+
+                group_is_empty[id] = false;
+            }
+        }
+        let mut used_groups = Vec::with_capacity(groups.len());
+        let mut id_map = Vec::with_capacity(groups.len());
+        let mut new_id = 0;
+        for (group, is_empty) in groups.into_iter().zip(group_is_empty.into_iter()) {
+            // Always push because the used id's need to match up. Empty ids won't get read anyway
+            id_map.push(new_id);
+            if !is_empty {
+                used_groups.push(Group {
+                    parent: group.parent.map(|old| id_map[old]),
+                    ..group
+                });
+                new_id += 1;
+            }
+        }
+
+        let deps = plain.deps.into_iter().map(|mut dep| {
+            dep.group = id_map[dep.group];
+            dep
+        });
+
         Self {
-            groups: Mutex::new(facet.groups.into_iter().collect()),
-            deps: facet.deps.into_iter().collect(),
-            lockfiles: facet.lockfiles.into_iter().collect(),
+            groups: used_groups,
+            deps: deps.collect(),
+            lockfiles: plain.lockfiles.into_iter().collect(),
         }
     }
 }
