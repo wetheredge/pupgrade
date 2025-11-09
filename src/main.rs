@@ -4,6 +4,8 @@ mod editor;
 mod managers;
 mod walker;
 
+use std::io::{self, BufWriter, Write};
+
 use anyhow::Context as _;
 
 use self::dep_collector::{DepCollector, Deps, DepsBuilder};
@@ -58,12 +60,13 @@ fn main() -> Result<(), anyhow::Error> {
         }
 
         cli::Action::Summarize => {
-            markdown_summary(&load_state()?);
+            let stderr = io::stderr().lock();
+            markdown_summary(&load_state()?, &mut BufWriter::new(stderr))?;
         }
 
         cli::Action::Finish => match std::fs::remove_file(STATE_FILE) {
             Ok(()) => {}
-            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
             Err(err) => return Err(err.into()),
         },
     }
@@ -93,12 +96,7 @@ fn save_state(deps: Deps) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn markdown_summary(collector: &Deps) {
-    let eprint_heading = |level, title: &_| {
-        let prefix = "#".repeat(level);
-        eprintln!("{prefix} {title}\n");
-    };
-
+fn markdown_summary(collector: &Deps, out: &mut impl Write) -> io::Result<()> {
     let mut stack = Vec::new();
     stack.push(collector.iter_root_groups().peekable());
     while let Some(iter) = stack.last_mut() {
@@ -107,18 +105,18 @@ fn markdown_summary(collector: &Deps) {
             let mut subgroups = group.iter_subgroups().peekable();
 
             if deps.peek().is_some() || subgroups.peek().is_some() {
-                let level = stack.len();
-                eprint_heading(level, group.title());
+                let prefix = "#".repeat(stack.len());
+                writeln!(out, "{prefix} {}\n", group.title())?;
             }
 
             let mut any_deps = false;
             for dep in deps {
                 any_deps = true;
-                eprintln!("- `{}`: {}", &dep.name, &dep.version);
+                writeln!(out, "- `{}`: {}", &dep.name, &dep.version)?;
             }
 
             if any_deps {
-                eprintln!();
+                writeln!(out)?;
             }
 
             stack.push(subgroups);
@@ -126,4 +124,6 @@ fn markdown_summary(collector: &Deps) {
             stack.pop();
         }
     }
+
+    Ok(())
 }
