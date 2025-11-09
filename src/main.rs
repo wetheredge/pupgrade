@@ -8,6 +8,8 @@ use std::io::{self, BufWriter, Write};
 
 use anyhow::Context as _;
 
+use crate::dep_collector::GroupFormat;
+
 use self::dep_collector::{DepCollector, Deps, DepsBuilder};
 use self::managers::Manager;
 
@@ -104,8 +106,16 @@ fn markdown_summary(collector: &Deps, out: &mut impl Write) -> io::Result<()> {
             let deps = group.iter_dependencies();
             let subgroups = group.iter_subgroups();
 
-            let prefix = "#".repeat(stack.len());
-            writeln!(out, "{prefix} {}\n", group.title())?;
+            let heading = "#".repeat(stack.len());
+            let group_name = group.name();
+            write!(out, "{heading} ")?;
+            match group.format() {
+                GroupFormat::Plain => write!(out, "{group_name}")?,
+                // TODO: link
+                GroupFormat::Path => write!(out, "`{group_name}`")?,
+                GroupFormat::Code => write!(out, "`{group_name}`")?,
+            }
+            write!(out, "\n\n")?;
 
             let mut any_deps = false;
             for dep in deps {

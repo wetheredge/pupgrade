@@ -1,6 +1,6 @@
 use camino::Utf8Path;
 
-use crate::dep_collector::Version;
+use crate::dep_collector::{GroupFormat, Version};
 
 pub(super) struct Manager;
 
@@ -19,7 +19,7 @@ impl super::Manager for Manager {
 
     fn scan_file(&self, _path: &Utf8Path, collector: crate::DepCollector<'_>) {
         let group = collector
-            .get_or_push_group("galock.actions".into(), || "GitHub Actions".to_owned())
+            .get_or_push_group("GitHub Actions".into(), GroupFormat::Plain)
             .unwrap();
 
         let actions = duct::cmd!("galock", "list")

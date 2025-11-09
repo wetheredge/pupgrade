@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use camino::Utf8Path;
 use facet::Facet;
 
-use crate::dep_collector::{GroupHandle, Version};
+use crate::dep_collector::{GroupFormat, GroupHandle, Version};
 
 pub(super) struct Manager;
 
@@ -18,10 +18,12 @@ impl super::Manager for Manager {
 
     fn scan_file(&self, path: &Utf8Path, collector: crate::DepCollector<'_>) {
         let root = collector
-            .get_or_push_group("bun".into(), || "Bun".to_owned())
+            .get_or_push_group("Bun".into(), GroupFormat::Plain)
             .unwrap();
         let path_string = path.as_str().to_owned();
-        let group = root.new_subgroup(path_string.clone(), path_string).unwrap();
+        let group = root
+            .new_subgroup(path_string.clone(), GroupFormat::Path)
+            .unwrap();
 
         let package = std::fs::read(path).unwrap();
         let package = facet_json::from_slice::<Package>(&package).unwrap();
@@ -31,7 +33,7 @@ impl super::Manager for Manager {
                 scan_inner(
                     path,
                     &group
-                        .new_subgroup(stringify!($key).to_owned(), $title.to_owned())
+                        .new_subgroup(stringify!($key).to_owned(), GroupFormat::Code)
                         .unwrap(),
                     package.$key,
                 )
@@ -42,7 +44,7 @@ impl super::Manager for Manager {
                     &group
                         .new_subgroup(
                             concat!(stringify!($key), "Dependencies").to_owned(),
-                            $title.to_owned(),
+                            GroupFormat::Code,
                         )
                         .unwrap(),
                     package.$key,

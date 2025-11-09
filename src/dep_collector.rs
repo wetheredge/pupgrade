@@ -25,23 +25,33 @@ pub(crate) struct Deps {
 
 #[derive(Facet)]
 struct Group {
-    id: String,
-    title: String,
-    #[facet(skip_serializing_if = Option::is_none, default)]
+    name: String,
+    #[facet(skip_serializing_if = is_default, default)]
+    format: GroupFormat,
+    #[facet(skip_serializing_if = is_default, default)]
     parent: Option<usize>,
     #[facet(skip_serializing, default)]
     locked: bool,
 }
 
+#[derive(Facet, Default, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub(crate) enum GroupFormat {
+    #[default]
+    Plain,
+    Path,
+    Code,
+}
+
 #[derive(Facet)]
 pub(crate) struct Dep {
     pub(crate) manager: usize,
-    #[facet(skip_serializing_if = |b| *b == false, default)]
+    #[facet(skip_serializing_if = is_default, default)]
     pub(crate) skip: bool,
     group: usize,
 
     pub(crate) name: String,
-    #[facet(skip_serializing_if = Option::is_none, default)]
+    #[facet(skip_serializing_if = is_default, default)]
     pub(crate) renamed: Option<String>,
     pub(crate) version: Version,
     pub(crate) updates: Option<Version>,
@@ -142,12 +152,12 @@ impl DepCollector<'_> {
     fn get_group<'a>(
         &'a self,
         parent: Option<usize>,
-        id: &str,
+        name: &str,
     ) -> Option<Result<GroupHandle<'a>, LockedGroupError>> {
         let mut groups = self.data.groups.lock().unwrap();
 
         for (index, group) in groups.iter_mut().enumerate() {
-            if group.parent == parent && group.id == id {
+            if group.parent == parent && group.name == name {
                 if group.locked {
                     return Some(Err(LockedGroupError));
                 }
@@ -166,7 +176,7 @@ impl DepCollector<'_> {
     pub(crate) fn get_or_push_group<'a>(
         &'a self,
         id: Cow<'_, str>,
-        title: impl FnOnce() -> String,
+        format: GroupFormat,
     ) -> Result<GroupHandle<'a>, LockedGroupError> {
         if let Some(group) = self.get_group(None, &id) {
             group
@@ -175,8 +185,8 @@ impl DepCollector<'_> {
 
             let index = groups.len();
             groups.push(Group {
-                id: id.into_owned(),
-                title: title(),
+                name: id.into_owned(),
+                format,
                 parent: None,
                 locked: true,
             });
@@ -196,7 +206,7 @@ impl<'a> GroupHandle<'a> {
         let mut current = Some(self.index);
         while let Some(index) = current {
             let group = &groups[index];
-            id.push(group.id.as_str());
+            id.push(group.name.as_str());
             current = group.parent;
         }
 
@@ -209,22 +219,22 @@ impl<'a> GroupHandle<'a> {
 
     pub(crate) fn new_subgroup(
         &self,
-        id: String,
-        title: String,
+        name: String,
+        format: GroupFormat,
     ) -> Result<GroupHandle<'a>, GroupExistsError> {
         let mut groups = self.collector.data.groups.lock().unwrap();
 
         let exists = groups
             .iter()
-            .any(|group| group.parent == Some(self.index) && group.id == id);
+            .any(|group| group.parent == Some(self.index) && group.name == name);
 
         if exists {
             Err(GroupExistsError)
         } else {
             let index = groups.len();
             groups.push(Group {
-                id,
-                title,
+                name,
+                format,
                 parent: Some(self.index),
                 locked: true,
             });
@@ -257,8 +267,12 @@ impl Drop for GroupHandle<'_> {
 }
 
 impl<'a> GroupRef<'a> {
-    pub(crate) fn title(&self) -> &str {
-        &self.data.groups[self.index].title
+    pub(crate) fn name(&self) -> &str {
+        &self.data.groups[self.index].name
+    }
+
+    pub(crate) fn format(&self) -> GroupFormat {
+        self.data.groups[self.index].format
     }
 
     pub(crate) fn iter_subgroups(&self) -> GroupIter<'a> {
@@ -353,4 +367,12 @@ impl From<DepsBuilder> for Deps {
             lockfiles: plain.lockfiles.into_iter().collect(),
         }
     }
+}
+
+fn is_default<T>(x: &T) -> bool
+where
+    T: Default,
+    for<'a> &'a T: Eq,
+{
+    x == &T::default()
 }

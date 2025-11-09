@@ -3,7 +3,7 @@ use std::fmt;
 use camino::Utf8Path;
 use taplo::dom::{Node, node};
 
-use crate::dep_collector::GroupHandle;
+use crate::dep_collector::{GroupFormat, GroupHandle};
 
 pub(super) struct Manager;
 
@@ -18,10 +18,12 @@ impl super::Manager for Manager {
 
     fn scan_file(&self, path: &Utf8Path, collector: crate::DepCollector<'_>) {
         let root = collector
-            .get_or_push_group("cargo".into(), || "Cargo".to_owned())
+            .get_or_push_group("Cargo".into(), GroupFormat::Plain)
             .unwrap();
         let path_string = path.as_str().to_owned();
-        let group = root.new_subgroup(path_string.clone(), path_string).unwrap();
+        let group = root
+            .new_subgroup(path_string.clone(), GroupFormat::Path)
+            .unwrap();
 
         let toml = std::fs::read_to_string(path).unwrap();
 
@@ -34,20 +36,15 @@ impl super::Manager for Manager {
             && let Some(dependencies) = get_table(&workspace, &["workspace"], "dependencies", path)
         {
             let group = group
-                .new_subgroup("workspace".to_owned(), "Workspace".to_owned())
+                .new_subgroup("workspace".to_owned(), GroupFormat::Code)
                 .unwrap();
             scan_inner(&group, &dependencies);
         }
 
-        let tables = [
-            ("dependencies", "Runtime"),
-            ("build-dependencies", "Build"),
-            ("dev-dependencies", "Dev"),
-        ];
-        for (key, title) in tables {
+        for key in ["dependencies", "build-dependencies", "dev-dependencies"] {
             if let Some(table) = get_root_table(key) {
                 let group = group
-                    .new_subgroup(key.to_owned(), title.to_owned())
+                    .new_subgroup(key.to_owned(), GroupFormat::Code)
                     .unwrap();
                 scan_inner(&group, &table);
             }
@@ -71,7 +68,7 @@ impl super::Manager for Manager {
                 if let Some(dependencies) = get_table(table, &["target", target], key, path) {
                     let group = group.get_group(key).unwrap().unwrap();
                     let group = group
-                        .new_subgroup(target.to_owned(), target.to_owned())
+                        .new_subgroup(target.to_owned(), GroupFormat::Code)
                         .unwrap();
                     scan_inner(&group, &dependencies);
                 }
@@ -79,8 +76,9 @@ impl super::Manager for Manager {
         });
 
         each_nested_table("patch", &mut |registry, table| {
+            // TODO: patch group?
             let group = group
-                .new_subgroup(registry.to_owned(), registry.to_owned())
+                .new_subgroup(registry.to_owned(), GroupFormat::Code)
                 .unwrap();
             scan_inner(&group, table);
         });

@@ -71,14 +71,14 @@ fn get_names(deps: &crate::Deps) -> Box<[String]> {
     stack.push((None, deps.iter_root_groups().peekable()));
     while let Some((_, iter)) = stack.last_mut() {
         if let Some(group) = iter.next() {
-            let group_name = group.title().to_owned();
+            let group_name = group.name();
 
             for dep in group.iter_dependencies() {
                 let mut name = Vec::new();
                 for ancestor in stack.iter().filter_map(|(name, _)| name.as_ref()) {
-                    name.push(ancestor.clone());
+                    name.push(ancestor.to_owned());
                 }
-                name.push(group_name.clone());
+                name.push(group_name.to_owned());
                 name.push(dep.name.to_owned());
                 let name = name.join(" > ");
 
@@ -87,7 +87,7 @@ fn get_names(deps: &crate::Deps) -> Box<[String]> {
 
             let mut subgroups = group.iter_subgroups().peekable();
             if subgroups.peek().is_some() {
-                stack.push((Some(group_name), subgroups));
+                stack.push((Some(group_name.to_owned()), subgroups));
             }
         } else {
             stack.pop();
