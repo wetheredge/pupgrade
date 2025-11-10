@@ -18,7 +18,7 @@ impl super::Manager for Manager {
 
     fn scan_file(&self, path: &Utf8Path, collector: crate::DepCollector<'_>) {
         let root = collector
-            .get_group("cargo".into(), || "Cargo".to_owned())
+            .get_or_push_group("cargo".into(), || "Cargo".to_owned())
             .unwrap();
         let path_string = path.as_str().to_owned();
         let group = root.new_subgroup(path_string.clone(), path_string).unwrap();
@@ -67,14 +67,11 @@ impl super::Manager for Manager {
         };
 
         each_nested_table("target", &mut |target, table| {
-            let group = group
-                .new_subgroup(target.to_owned(), target.to_owned())
-                .unwrap();
-            let tables = [("Runtime", "dependencies"), ("Build", "build-dependencies")];
-            for (title, key) in tables {
+            for key in ["dependencies", "build-dependencies"] {
                 if let Some(dependencies) = get_table(table, &["target", target], key, path) {
+                    let group = group.get_group(key).unwrap().unwrap();
                     let group = group
-                        .new_subgroup(key.to_owned(), title.to_owned())
+                        .new_subgroup(target.to_owned(), target.to_owned())
                         .unwrap();
                     scan_inner(&group, &dependencies);
                 }

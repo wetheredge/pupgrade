@@ -19,7 +19,7 @@ impl super::Manager for Manager {
 
     fn scan_file(&self, _path: &Utf8Path, collector: crate::DepCollector<'_>) {
         let group = collector
-            .get_group("galock.actions".into(), || "GitHub Actions".to_owned())
+            .get_or_push_group("galock.actions".into(), || "GitHub Actions".to_owned())
             .unwrap();
 
         let actions = duct::cmd!("galock", "list")

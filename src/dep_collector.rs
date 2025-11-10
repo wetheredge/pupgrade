@@ -139,38 +139,52 @@ impl DepsBuilder {
 }
 
 impl DepCollector<'_> {
-    pub(crate) fn get_group<'a>(
+    fn get_group<'a>(
+        &'a self,
+        parent: Option<usize>,
+        id: &str,
+    ) -> Option<Result<GroupHandle<'a>, LockedGroupError>> {
+        let mut groups = self.data.groups.lock().unwrap();
+
+        for (index, group) in groups.iter_mut().enumerate() {
+            if group.parent == parent && group.id == id {
+                if group.locked {
+                    return Some(Err(LockedGroupError));
+                }
+
+                group.locked = true;
+                return Some(Ok(GroupHandle {
+                    collector: self,
+                    index,
+                }));
+            }
+        }
+
+        None
+    }
+
+    pub(crate) fn get_or_push_group<'a>(
         &'a self,
         id: Cow<'_, str>,
         title: impl FnOnce() -> String,
     ) -> Result<GroupHandle<'a>, LockedGroupError> {
-        let mut groups = self.data.groups.lock().unwrap();
+        if let Some(group) = self.get_group(None, &id) {
+            group
+        } else {
+            let mut groups = self.data.groups.lock().unwrap();
 
-        for (index, group) in groups.iter_mut().enumerate() {
-            if group.parent.is_none() && group.id == id {
-                if group.locked {
-                    return Err(LockedGroupError);
-                }
-
-                group.locked = true;
-                return Ok(GroupHandle {
-                    collector: self,
-                    index,
-                });
-            }
+            let index = groups.len();
+            groups.push(Group {
+                id: id.into_owned(),
+                title: title(),
+                parent: None,
+                locked: true,
+            });
+            Ok(GroupHandle {
+                collector: self,
+                index,
+            })
         }
-
-        let index = groups.len();
-        groups.push(Group {
-            id: id.into_owned(),
-            title: title(),
-            parent: None,
-            locked: true,
-        });
-        Ok(GroupHandle {
-            collector: self,
-            index,
-        })
     }
 }
 
@@ -187,6 +201,10 @@ impl<'a> GroupHandle<'a> {
         }
 
         f(&id)
+    }
+
+    pub(crate) fn get_group(&self, id: &str) -> Option<Result<GroupHandle<'a>, LockedGroupError>> {
+        self.collector.get_group(Some(self.index), id)
     }
 
     pub(crate) fn new_subgroup(

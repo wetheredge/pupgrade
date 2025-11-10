@@ -18,7 +18,7 @@ impl super::Manager for Manager {
 
     fn scan_file(&self, path: &Utf8Path, collector: crate::DepCollector<'_>) {
         let root = collector
-            .get_group("bun".into(), || "Bun".to_owned())
+            .get_or_push_group("bun".into(), || "Bun".to_owned())
             .unwrap();
         let path_string = path.as_str().to_owned();
         let group = root.new_subgroup(path_string.clone(), path_string).unwrap();
