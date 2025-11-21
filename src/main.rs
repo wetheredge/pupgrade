@@ -1,6 +1,6 @@
 mod cli;
 mod dep_collector;
-// mod editor;
+mod editor;
 mod managers;
 mod summary;
 mod walker;
@@ -62,11 +62,9 @@ fn main() -> Result<(), anyhow::Error> {
         }
 
         cli::Action::Edit => {
-            todo!()
-            // let mut state = load_state()?;
-            // editor::run(ratatui::init(), &mut state)?;
-            // ratatui::restore();
-            // save_state(state)?;
+            let mut state = load_state()?;
+            editor::run(&mut state)?;
+            save_state(state)?;
         }
 
         cli::Action::Summarize => {

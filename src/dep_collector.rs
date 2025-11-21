@@ -113,6 +113,10 @@ impl Deps {
     pub(crate) fn kind(&self, id: usize) -> &str {
         &self.kinds[id].1
     }
+
+    pub(crate) fn dep_mut(&mut self, id: usize) -> &mut Dep {
+        &mut self.deps[id]
+    }
 }
 
 impl DepsBuilder {
@@ -200,6 +204,14 @@ impl Updates {
     #[must_use]
     pub(crate) fn is_none(&self) -> bool {
         matches!(self, Self::None)
+    }
+
+    /// Returns `true` if the updates is [`Found`].
+    ///
+    /// [`Found`]: Updates::Found
+    #[must_use]
+    pub(crate) fn is_found(&self) -> bool {
+        matches!(self, Self::Found(..))
     }
 }
 

@@ -148,7 +148,8 @@ fn scan_inner(collector: DepCollector, path_id: usize, kind_id: usize, table: &n
                         }
                     }
 
-                    todo!()
+                    // FIXME
+                    continue;
                 }
             }
             Node::Str(version) => Version::SemVer(version.value().to_owned()),

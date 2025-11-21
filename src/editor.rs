@@ -1,98 +1,140 @@
-use crossterm::event::{self, Event, KeyCode};
-use ratatui::crossterm;
-use ratatui::style::{self, Style};
-use ratatui::widgets;
+use std::collections::HashMap;
+use std::fmt::{self, Write as _};
 
-pub(crate) fn run(
-    mut terminal: ratatui::DefaultTerminal,
-    deps: &mut crate::Deps,
-) -> anyhow::Result<()> {
-    let names = get_names(&deps);
-    let get_list = |deps: &crate::Deps| {
-        let items = deps
-            .iter_dependencies()
-            .zip(names.iter())
-            .map(|(dep, name)| {
-                let mut style = Style::new();
-                if dep.skip {
-                    style.add_modifier = style::Modifier::DIM | style::Modifier::ITALIC;
-                }
-                widgets::ListItem::new(name.as_str()).style(style)
-            })
-            .collect::<Vec<_>>();
+use dialoguer::{FuzzySelect, MultiSelect, Select};
 
-        widgets::List::new(items).highlight_symbol("> ")
-    };
+use crate::dep_collector::{Dep, Updates};
 
-    let mut list = get_list(&deps);
-    let mut state = widgets::ListState::default().with_selected(Some(0));
+pub(crate) fn run(state: &mut crate::Deps) -> anyhow::Result<()> {
+    let theme = dialoguer::theme::ColorfulTheme::default();
 
-    let mut height = terminal.size()?.height;
-    let is_ctrl = |key: event::KeyEvent| key.modifiers == event::KeyModifiers::CONTROL;
+    let mut updateable = HashMap::new();
+    for (id, dep) in state.deps().iter().enumerate() {
+        if dep.updates.is_found() {
+            updateable
+                .entry(&dep.name)
+                .or_insert_with(Vec::new)
+                .push(id);
+        }
+    }
+    let mut updateable = updateable
+        .into_iter()
+        .map(|(name, ids)| (name.clone(), ids))
+        .collect::<Vec<_>>();
+    updateable.sort_by(|(a, _), (b, _)| a.cmp(b));
+    let updateable = updateable;
+
     loop {
-        terminal.draw(|frame| frame.render_stateful_widget(&list, frame.area(), &mut state))?;
+        let id = FuzzySelect::with_theme(&theme)
+            .with_prompt("Select an update to modify or <escape> to finish")
+            .items(updateable.iter().map(|(name, _)| name))
+            .report(false)
+            .interact_opt()?;
 
-        match event::read()? {
-            Event::Key(key) => match key.code {
-                KeyCode::Esc => return Ok(()),
-                KeyCode::Char(' ') => {
-                    let current = state.selected().unwrap();
-                    deps.get_dependency_mut(current).skip ^= true;
-                    list = get_list(&deps);
-                }
+        let Some(id) = id else {
+            break;
+        };
 
-                KeyCode::Char('j') | KeyCode::Down => state.select_next(),
-                KeyCode::Char('k') | KeyCode::Up => state.select_previous(),
-                KeyCode::Char('n') if is_ctrl(key) => state.select_next(),
-                KeyCode::Char('p') if is_ctrl(key) => state.select_previous(),
+        let ids = &updateable[id].1;
+        let mut _selected;
+        let ids = if ids.len() == 1 {
+            ids.as_slice()
+        } else {
+            let items = ids.iter().map(|id| (DisplayFullDep::new(state, *id), true));
 
-                KeyCode::Char('d') if is_ctrl(key) => state.scroll_down_by(height / 2),
-                KeyCode::Char('u') if is_ctrl(key) => state.scroll_up_by(height / 2),
+            _selected = MultiSelect::with_theme(&theme)
+                .with_prompt("Select which update(s) to edit")
+                .items_checked(items)
+                .report(false)
+                .interact()?;
+            for id in _selected.iter_mut() {
+                *id = ids[*id];
+            }
+            &_selected
+        };
 
-                KeyCode::Char('f') if is_ctrl(key) => state.scroll_down_by(height),
-                KeyCode::Char('b') if is_ctrl(key) => state.scroll_up_by(height),
-                KeyCode::PageDown => state.scroll_down_by(height),
-                KeyCode::PageUp => state.scroll_up_by(height),
+        let mut prompt = String::new();
+        for (i, id) in ids.iter().enumerate() {
+            if i != 0 {
+                prompt.push_str("\n  ");
+            }
+            write!(prompt, "{}", DisplayFullDep::new(state, *id)).unwrap();
+        }
 
-                KeyCode::Char('g') | KeyCode::Home => state.select_first(),
-                KeyCode::Char('G') | KeyCode::End => state.select_last(),
+        let actions = Action::ALL;
+        let action = Select::with_theme(&theme)
+            .with_prompt(prompt)
+            .items(actions)
+            .default(0)
+            .interact()?;
 
-                _ => {}
-            },
-            Event::Resize(_, h) => height = h,
-            _ => {}
+        for id in ids {
+            let dep = state.dep_mut(*id);
+            match actions[action] {
+                Action::Update => dep.skip = false,
+                Action::Skip => dep.skip = true,
+            }
+        }
+    }
+
+    Ok(())
+}
+
+struct DisplayFullDep<'a> {
+    state: &'a crate::Deps,
+    dep: &'a Dep,
+}
+
+impl<'a> DisplayFullDep<'a> {
+    fn new(state: &'a crate::Deps, dep: usize) -> Self {
+        Self {
+            state,
+            dep: &state.deps()[dep],
         }
     }
 }
 
-fn get_names(deps: &crate::Deps) -> Box<[String]> {
-    let mut names = Vec::new();
-    let mut stack = Vec::<(Option<String>, _)>::new();
-    stack.push((None, deps.iter_root_groups().peekable()));
-    while let Some((_, iter)) = stack.last_mut() {
-        if let Some(group) = iter.next() {
-            let group_name = group.name();
-
-            for dep in group.iter_dependencies() {
-                let mut name = Vec::new();
-                for ancestor in stack.iter().filter_map(|(name, _)| name.as_ref()) {
-                    name.push(ancestor.to_owned());
-                }
-                name.push(group_name.to_owned());
-                name.push(dep.name.to_owned());
-                let name = name.join(" > ");
-
-                names.push(format!("{name}: {}", &dep.version));
-            }
-
-            let mut subgroups = group.iter_subgroups().peekable();
-            if subgroups.peek().is_some() {
-                stack.push((Some(group_name.to_owned()), subgroups));
-            }
+impl fmt::Display for DisplayFullDep<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(renamed) = self.dep.renamed.as_deref() {
+            write!(f, "{renamed} ({})", self.dep.name)?;
         } else {
-            stack.pop();
+            f.write_str(&self.dep.name)?;
         }
-    }
 
-    names.into_boxed_slice()
+        f.write_str(": ")?;
+
+        if let Some(id) = self.dep.kind {
+            f.write_str(self.state.kind(id))?;
+            f.write_str(" ")?;
+        }
+
+        if let Some(id) = self.dep.path {
+            write!(f, "in {}", self.state.path(id).as_str())?;
+        }
+
+        let Updates::Found(update) = &self.dep.updates else {
+            unreachable!()
+        };
+        write!(f, ", {} -> {}", self.dep.version, update)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Action {
+    Update,
+    Skip,
+}
+
+impl Action {
+    const ALL: &[Self] = &[Self::Update, Self::Skip];
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Update => "Update",
+            Self::Skip => "Skip",
+        })
+    }
 }
