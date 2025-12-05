@@ -9,7 +9,7 @@ pub(super) struct Manager;
 
 impl super::Manager for Manager {
     fn name(&self) -> &'static str {
-        "Bun"
+        "pnpm"
     }
 
     fn walk_file(&self, path: &Utf8Path) -> bool {
@@ -18,7 +18,7 @@ impl super::Manager for Manager {
 
     fn scan_file(&self, path: &Utf8Path, collector: crate::DepCollector<'_>) {
         let root = collector
-            .get_or_push_group("Bun".into(), GroupFormat::Plain)
+            .get_or_push_group("pnpm".into(), GroupFormat::Plain)
             .unwrap();
         let path_string = path.as_str().to_owned();
         let group = root
