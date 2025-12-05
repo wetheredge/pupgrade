@@ -339,6 +339,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f448a18de9f8f180a0154dba3ca6ba36174f6f666c17bf94bc98df00e48bd47"
 dependencies = [
  "bitflags",
+ "camino",
  "impls",
 ]
 

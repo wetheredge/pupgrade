@@ -3,7 +3,8 @@ use std::fmt;
 use camino::Utf8Path;
 use taplo::dom::{Node, node};
 
-use crate::dep_collector::{GroupFormat, GroupHandle};
+use crate::DepCollector;
+use crate::dep_collector::DepInit;
 
 pub(super) struct Manager;
 
@@ -16,14 +17,8 @@ impl super::Manager for Manager {
         path.file_name().is_some_and(|name| name == "Cargo.toml")
     }
 
-    fn scan_file(&self, path: &Utf8Path, collector: crate::DepCollector<'_>) {
-        let root = collector
-            .get_or_push_group("Cargo".into(), GroupFormat::Plain)
-            .unwrap();
-        let path_string = path.as_str().to_owned();
-        let group = root
-            .new_subgroup(path_string.clone(), GroupFormat::Path)
-            .unwrap();
+    fn scan_file(&self, path: &Utf8Path, collector: DepCollector<'_>) {
+        let path_id = collector.push_path(path.into());
 
         let toml = std::fs::read_to_string(path).unwrap();
 
@@ -35,18 +30,18 @@ impl super::Manager for Manager {
         if let Some(workspace) = get_root_table("workspace")
             && let Some(dependencies) = get_table(&workspace, &["workspace"], "dependencies", path)
         {
-            let group = group
-                .new_subgroup("workspace".to_owned(), GroupFormat::Code)
-                .unwrap();
-            scan_inner(&group, &dependencies);
+            let kind_id = collector.get_kind_id("workspace".to_owned(), || "Workspace".to_owned());
+            scan_inner(collector, path_id, kind_id, &dependencies);
         }
 
-        for key in ["dependencies", "build-dependencies", "dev-dependencies"] {
+        for (key, display) in [
+            ("dependencies", "Runtime"),
+            ("build-dependencies", "Build"),
+            ("dev-dependencies", "Dev"),
+        ] {
             if let Some(table) = get_root_table(key) {
-                let group = group
-                    .new_subgroup(key.to_owned(), GroupFormat::Code)
-                    .unwrap();
-                scan_inner(&group, &table);
+                let kind_id = collector.get_kind_id(key.to_owned(), || display.to_owned());
+                scan_inner(collector, path_id, kind_id, &table);
             }
         }
 
@@ -64,28 +59,26 @@ impl super::Manager for Manager {
         };
 
         each_nested_table("target", &mut |target, table| {
-            for key in ["dependencies", "build-dependencies"] {
+            for (key, display) in [("dependencies", "Runtime"), ("build-dependencies", "Build")] {
                 if let Some(dependencies) = get_table(table, &["target", target], key, path) {
-                    let group = group.get_group(key).unwrap().unwrap();
-                    let group = group
-                        .new_subgroup(target.to_owned(), GroupFormat::Code)
-                        .unwrap();
-                    scan_inner(&group, &dependencies);
+                    let kind_id = collector.get_kind_id(format!("{key}.{target}"), || {
+                        format!("{display} ({target})")
+                    });
+                    scan_inner(collector, path_id, kind_id, &dependencies);
                 }
             }
         });
 
         each_nested_table("patch", &mut |registry, table| {
-            // TODO: patch group?
-            let group = group
-                .new_subgroup(registry.to_owned(), GroupFormat::Code)
-                .unwrap();
-            scan_inner(&group, table);
+            let kind_id = collector.get_kind_id(format!("patch.{registry}"), || {
+                format!("Patch ({registry})")
+            });
+            scan_inner(collector, path_id, kind_id, table);
         });
     }
 }
 
-fn scan_inner(group: &GroupHandle, table: &node::Table) {
+fn scan_inner(collector: DepCollector, path_id: usize, kind_id: usize, table: &node::Table) {
     use crate::dep_collector::Version;
 
     for (name, meta) in table.entries().read().iter() {
@@ -121,7 +114,13 @@ fn scan_inner(group: &GroupHandle, table: &node::Table) {
             _ => todo!(),
         };
 
-        group.push_dep(name.value().to_owned(), None, version);
+        collector.push_dep(DepInit {
+            path: Some(path_id),
+            kind: Some(kind_id),
+            name: name.value().to_owned(),
+            renamed: None,
+            version,
+        });
     }
 }
 

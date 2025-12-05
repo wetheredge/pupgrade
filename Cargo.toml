@@ -10,7 +10,7 @@ boxcar = "=0.2.14"
 camino = "=1.2.1"
 duct = "=1.1.0"
 env_logger = { version = "=0.11.8", features = ["auto-color", "humantime"], default-features = false }
-facet = "=0.29.1"
+facet = { version = "=0.29.1", features = ["camino"] }
 facet-json = "=0.29.1"
 gix-ignore = "=0.16.0"
 lexopt = "=0.3.1"

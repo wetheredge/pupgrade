@@ -1,14 +1,13 @@
 mod cli;
 mod dep_collector;
-mod editor;
+// mod editor;
 mod managers;
+mod summary;
 mod walker;
 
-use std::io::{self, BufWriter, Write};
+use std::io::{self, BufWriter};
 
 use anyhow::Context as _;
-
-use crate::dep_collector::GroupFormat;
 
 use self::dep_collector::{DepCollector, Deps, DepsBuilder};
 use self::managers::Manager;
@@ -55,15 +54,16 @@ fn main() -> Result<(), anyhow::Error> {
         }
 
         cli::Action::Edit => {
-            let mut state = load_state()?;
-            editor::run(ratatui::init(), &mut state)?;
-            ratatui::restore();
-            save_state(state)?;
+            todo!()
+            // let mut state = load_state()?;
+            // editor::run(ratatui::init(), &mut state)?;
+            // ratatui::restore();
+            // save_state(state)?;
         }
 
         cli::Action::Summarize => {
             let stderr = io::stderr().lock();
-            markdown_summary(&load_state()?, &mut BufWriter::new(stderr))?;
+            summary::write_markdown(&load_state()?, &mut BufWriter::new(stderr))?;
         }
 
         cli::Action::Finish => match std::fs::remove_file(STATE_FILE) {
@@ -94,44 +94,6 @@ fn load_state() -> anyhow::Result<Deps> {
 }
 
 fn save_state(deps: Deps) -> anyhow::Result<()> {
-    std::fs::write(STATE_FILE, &deps.serialize()).context("writing state")?;
-    Ok(())
-}
-
-fn markdown_summary(collector: &Deps, out: &mut impl Write) -> io::Result<()> {
-    let mut stack = Vec::new();
-    stack.push(collector.iter_root_groups());
-    while let Some(iter) = stack.last_mut() {
-        if let Some(group) = iter.next() {
-            let deps = group.iter_dependencies();
-            let subgroups = group.iter_subgroups();
-
-            let heading = "#".repeat(stack.len());
-            let group_name = group.name();
-            write!(out, "{heading} ")?;
-            match group.format() {
-                GroupFormat::Plain => write!(out, "{group_name}")?,
-                // TODO: link
-                GroupFormat::Path => write!(out, "`{group_name}`")?,
-                GroupFormat::Code => write!(out, "`{group_name}`")?,
-            }
-            write!(out, "\n\n")?;
-
-            let mut any_deps = false;
-            for dep in deps {
-                any_deps = true;
-                writeln!(out, "- `{}`: {}", &dep.name, &dep.version)?;
-            }
-
-            if any_deps {
-                writeln!(out)?;
-            }
-
-            stack.push(subgroups);
-        } else {
-            stack.pop();
-        }
-    }
-
+    std::fs::write(STATE_FILE, deps.serialize()).context("writing state")?;
     Ok(())
 }

@@ -1,6 +1,6 @@
 use camino::Utf8Path;
 
-use crate::dep_collector::{GroupFormat, Version};
+use crate::dep_collector::{DepInit, Version};
 
 pub(super) struct Manager;
 
@@ -18,10 +18,6 @@ impl super::Manager for Manager {
     }
 
     fn scan_file(&self, _path: &Utf8Path, collector: crate::DepCollector<'_>) {
-        let group = collector
-            .get_or_push_group("GitHub Actions".into(), GroupFormat::Plain)
-            .unwrap();
-
         #[derive(facet::Facet)]
         struct Action<'a> {
             repo: &'a str,
@@ -38,15 +34,17 @@ impl super::Manager for Manager {
         let actions: Vec<Action> = facet_json::from_str(&json).unwrap();
 
         for action in actions {
-            group.push_dep(
-                action.repo.to_owned(),
-                None,
-                Version::GitPinnedTag {
+            collector.push_dep(DepInit {
+                path: None,
+                kind: None,
+                name: action.repo.to_owned(),
+                renamed: None,
+                version: Version::GitPinnedTag {
                     repo: action.repo.to_owned(),
                     commit: action.commit.to_owned(),
                     tag: action.tag.to_owned(),
                 },
-            );
+            });
         }
     }
 }
