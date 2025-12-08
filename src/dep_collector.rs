@@ -74,12 +74,6 @@ pub(crate) enum Version {
     },
 }
 
-#[derive(Facet)]
-pub(crate) struct UpdatePair<'a> {
-    old: &'a Version,
-    new: &'a Updates,
-}
-
 impl Deps {
     pub(crate) fn serialize(self) -> String {
         facet_json::to_string(&self)
