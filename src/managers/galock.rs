@@ -63,24 +63,33 @@ impl super::Manager for Manager {
         let refs = repo.references().unwrap();
         let tags = refs.tags().unwrap();
 
-        let mut latest = None;
+        let count_dots = |s: &str| s.chars().filter(|c| *c == '.').count();
+
+        let mut latest: Option<(String, String, gix::date::Time)> = None;
         for mut tag in tags.filter_map(Result::ok) {
             let name: &str = tag.name().shorten().try_into().unwrap();
-            let pruned = name.strip_prefix('v').unwrap_or(name);
+            let without_v = name.strip_prefix('v').unwrap_or(name);
 
-            if !pruned.starts_with(|c: char| c.is_ascii_digit()) {
+            if !without_v.starts_with(|c: char| c.is_ascii_digit()) {
                 continue;
             }
 
             let name = name.to_owned();
 
             let commit = tag.peel_to_commit().unwrap();
+            let time = commit.author().unwrap().time().unwrap();
+            if let Some(latest) = latest.as_ref()
+                && (count_dots(&name) < count_dots(&latest.1) || time < latest.2)
+            {
+                continue;
+            }
+
             let commit = hex::encode(commit.id.as_slice());
 
-            latest = Some((commit, name));
+            latest = Some((commit, name, time));
         }
 
-        if let Some((latest_commit, latest_tag)) = latest {
+        if let Some((latest_commit, latest_tag, _)) = latest {
             if latest_commit != *commit || latest_tag != *tag {
                 return Updates::Found(Version::GitPinnedTag {
                     repo: repo_url.clone(),
