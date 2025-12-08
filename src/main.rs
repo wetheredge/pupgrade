@@ -9,6 +9,8 @@ use std::io::{self, BufWriter};
 
 use anyhow::Context as _;
 
+use crate::dep_collector::Updates;
+
 use self::dep_collector::{Dep, DepCollector, Deps, DepsBuilder};
 use self::managers::Manager;
 
@@ -67,6 +69,17 @@ fn main() -> Result<(), anyhow::Error> {
             save_state(state)?;
         }
 
+        cli::Action::Apply => {
+            let state = load_state()?;
+            for dep in state.deps() {
+                if !dep.skip
+                    && let Updates::Found(version) = &dep.updates
+                {
+                    managers[dep.manager].apply(&state, dep, version);
+                }
+            }
+        }
+
         cli::Action::Summarize => {
             let stderr = io::stderr().lock();
             summary::write_markdown(&load_state()?, &mut BufWriter::new(stderr))?;
@@ -93,9 +106,7 @@ fn init_logger() {
 
 fn load_state() -> anyhow::Result<Deps> {
     let raw = std::fs::read_to_string(STATE_FILE).context("reading state")?;
-    let deps = Deps::deserialize(&raw)
-        .map_err(facet_json::DeserError::into_owned)
-        .context("deserializing state")?;
+    let deps = Deps::deserialize(&raw).context("deserializing state")?;
     Ok(deps)
 }
 

@@ -1,12 +1,14 @@
 use std::fmt;
-use std::io::{BufRead, BufReader};
+use std::fs;
+use std::io::{BufRead as _, BufReader};
 
 use camino::Utf8Path;
 use facet::Facet;
+use taplo::dom::node::DomNode as _;
 use taplo::dom::{Node, node};
 
 use crate::DepCollector;
-use crate::dep_collector::{DepInit, Updates, Version};
+use crate::dep_collector::{Dep, DepInit, Deps, Updates, Version};
 
 pub(super) struct Manager;
 
@@ -22,7 +24,7 @@ impl super::Manager for Manager {
     fn scan_file(&self, path: &Utf8Path, collector: DepCollector<'_>) {
         let path_id = collector.push_path(path.parent().unwrap().into());
 
-        let toml = std::fs::read_to_string(path).unwrap();
+        let toml = fs::read_to_string(path).unwrap();
 
         let dom = taplo::parser::parse(&toml).into_dom();
         let root = dom.as_table().unwrap();
@@ -63,7 +65,7 @@ impl super::Manager for Manager {
         each_nested_table("target", &mut |target, table| {
             for (key, display) in [("dependencies", "Runtime"), ("build-dependencies", "Build")] {
                 if let Some(dependencies) = get_table(table, &["target", target], key, path) {
-                    let kind_id = collector.get_kind_id(format!("{key}.{target}"), || {
+                    let kind_id = collector.get_kind_id(format!("{key}\0{target}"), || {
                         format!("{display} ({target})")
                     });
                     scan_inner(collector, path_id, kind_id, &dependencies);
@@ -72,7 +74,7 @@ impl super::Manager for Manager {
         });
 
         each_nested_table("patch", &mut |registry, table| {
-            let kind_id = collector.get_kind_id(format!("patch.{registry}"), || {
+            let kind_id = collector.get_kind_id(format!("patch\0{registry}"), || {
                 format!("Patch ({registry})")
             });
             scan_inner(collector, path_id, kind_id, table);
@@ -117,6 +119,55 @@ impl super::Manager for Manager {
             Version::GitCommit { .. } => todo!(),
             Version::GitPinnedTag { .. } => todo!(),
         }
+    }
+
+    fn apply(&self, deps: &Deps, dep: &Dep, version: &Version) {
+        let path = deps.path(dep.path.unwrap()).join("Cargo.toml");
+        let mut toml = fs::read_to_string(&path).unwrap();
+
+        let dom = taplo::parser::parse(&toml).into_dom();
+        let root = dom.as_table().unwrap();
+
+        let table = deps.internal_kind(dep.kind.unwrap());
+        let table = if let Some((head, tail)) = table.split_once('\0') {
+            if head == "patch" {
+                let table = get_table(root, &[], "patch", &path).unwrap();
+                get_table(&table, &["patch"], tail, &path).unwrap()
+            } else {
+                let table = get_table(root, &[], "target", &path).unwrap();
+                let table = get_table(&table, &["target"], tail, &path).unwrap();
+                get_table(&table, &["target", tail], head, &path).unwrap()
+            }
+        } else if table == "workspace" {
+            let table = get_table(root, &[], "workspace", &path).unwrap();
+            get_table(&table, &["workspace"], "dependencies", &path).unwrap()
+        } else {
+            get_table(root, &[], table, &path).unwrap()
+        };
+
+        let name = dep.renamed.as_deref().unwrap_or(&dep.name);
+        let mut replacements = Vec::new();
+        let node = table.get(name).unwrap();
+        match version {
+            Version::SemVer(latest) => {
+                let node = match node {
+                    Node::Table(meta) => meta.get("version").unwrap().try_into_str().unwrap(),
+                    Node::Str(current) => current,
+                    _ => todo!(),
+                };
+                replacements.push((node.syntax().unwrap().text_range(), format!("\"{latest}\"")));
+            }
+            Version::GitCommit { .. } => todo!(),
+            Version::GitPinnedTag { .. } => todo!(),
+        }
+
+        replacements.sort_by_key(|(range, _)| range.start());
+        for (range, with) in replacements {
+            let range = usize::from(range.start())..usize::from(range.end());
+            toml.replace_range(range, &with);
+        }
+
+        fs::write(path, toml).unwrap();
     }
 }
 

@@ -5,7 +5,7 @@ use std::sync::atomic::AtomicBool;
 use camino::{Utf8Path, Utf8PathBuf};
 use sha2::{Digest as _, Sha256};
 
-use crate::dep_collector::{DepInit, Updates, Version};
+use crate::dep_collector::{Dep, DepInit, Deps, Updates, Version};
 
 pub(super) struct Manager;
 
@@ -53,7 +53,7 @@ impl super::Manager for Manager {
         }
     }
 
-    fn find_updates(&self, dep: &crate::Dep) -> Updates {
+    fn find_updates(&self, dep: &Dep) -> Updates {
         let Version::GitPinnedTag { repo, commit, tag } = &dep.version else {
             unreachable!()
         };
@@ -93,6 +93,19 @@ impl super::Manager for Manager {
         }
 
         Updates::None
+    }
+
+    fn apply(&self, _deps: &Deps, _dep: &Dep, version: &Version) {
+        let Version::GitPinnedTag { repo, commit, tag } = version else {
+            unreachable!()
+        };
+
+        duct::cmd!("galock", "set", repo, tag, commit)
+            .stdin_null()
+            .stderr_null()
+            .stdout_null()
+            .run()
+            .unwrap();
     }
 }
 

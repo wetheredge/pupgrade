@@ -4,7 +4,7 @@ mod pnpm;
 
 use camino::Utf8Path;
 
-use crate::dep_collector::Updates;
+use crate::dep_collector::{Dep, Deps, Updates, Version};
 
 pub(crate) fn all() -> Vec<Box<dyn Manager>> {
     vec![
@@ -25,5 +25,7 @@ pub(crate) trait Manager {
 
     fn scan_file(&self, path: &Utf8Path, collector: crate::DepCollector<'_>);
 
-    fn find_updates(&self, dep: &crate::Dep) -> Updates;
+    fn find_updates(&self, dep: &Dep) -> Updates;
+
+    fn apply(&self, deps: &Deps, dep: &Dep, version: &Version);
 }

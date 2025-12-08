@@ -9,13 +9,14 @@ pub(crate) enum Action {
     Init,
     Edit,
     Summarize,
+    Apply,
     Clean,
 }
 
 pub(crate) static USAGE: &str = concat!(
     "Usage: ",
     env!("CARGO_PKG_NAME"),
-    " [--cwd=DIR] <init | edit | summarize | clean>"
+    " [--cwd=DIR] <init | edit | apply | summarize | clean>"
 );
 
 pub(crate) fn parse() -> Result<Cli, lexopt::Error> {
@@ -35,6 +36,7 @@ pub(crate) fn parse() -> Result<Cli, lexopt::Error> {
 
             Value(v) if v == "init" => action = Some(Action::Init),
             Value(v) if v == "edit" => action = Some(Action::Edit),
+            Value(v) if v == "apply" => action = Some(Action::Apply),
             Value(v) if v == "summarize" => action = Some(Action::Summarize),
             Value(v) if v == "clean" => action = Some(Action::Clean),
 

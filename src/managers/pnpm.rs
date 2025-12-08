@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::fs::File;
 
 use camino::Utf8Path;
 use facet::Facet;
 
 use crate::DepCollector;
-use crate::dep_collector::{DepInit, Updates, Version};
+use crate::dep_collector::{Dep, DepInit, Deps, Updates, Version};
 
 pub(super) struct Manager;
 
@@ -72,9 +73,33 @@ impl super::Manager for Manager {
             Version::GitPinnedTag { .. } => todo!(),
         }
     }
+
+    fn apply(&self, deps: &Deps, dep: &Dep, version: &Version) {
+        let path = deps.path(dep.path.unwrap()).join("package.json");
+
+        let Version::SemVer(latest) = version else {
+            unreachable!()
+        };
+
+        let json = std::fs::read(&path).unwrap();
+        let mut json: facet_value::Value = facet_json::from_slice(&json).unwrap();
+        let package = json.as_object_mut().unwrap();
+
+        let kind = deps.internal_kind(dep.kind.unwrap());
+        let name = dep.renamed.as_deref().unwrap_or(&dep.name);
+        package
+            .get_mut(kind)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .insert(name, latest);
+
+        let writer = File::create(path).unwrap();
+        facet_json::to_writer_std_pretty(writer, &json).unwrap();
+    }
 }
 
-fn scan_inner(collector: DepCollector<'_>, path_id: usize, kind_id: usize, deps: Deps) {
+fn scan_inner(collector: DepCollector<'_>, path_id: usize, kind_id: usize, deps: PackageDeps) {
     for (mut name, mut version) in deps {
         if version == "workspace:*" {
             continue;
@@ -103,18 +128,18 @@ fn scan_inner(collector: DepCollector<'_>, path_id: usize, kind_id: usize, deps:
 struct Package {
     name: String,
     #[facet(default)]
-    dependencies: Deps,
+    dependencies: PackageDeps,
     #[facet(default, rename = "devDependencies")]
-    dev: Deps,
+    dev: PackageDeps,
     #[facet(default, rename = "peerDependencies")]
-    peer: Deps,
+    peer: PackageDeps,
     #[facet(default, rename = "optionalDependencies")]
-    optional: Deps,
+    optional: PackageDeps,
     #[facet(default)]
-    overrides: Deps,
+    overrides: PackageDeps,
 }
 
-type Deps = HashMap<String, String>;
+type PackageDeps = HashMap<String, String>;
 
 #[derive(Debug, Facet)]
 struct RegistryData {
