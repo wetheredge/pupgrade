@@ -72,7 +72,7 @@ fn main() -> Result<(), anyhow::Error> {
             summary::write_markdown(&load_state()?, &mut BufWriter::new(stderr))?;
         }
 
-        cli::Action::Finish => match std::fs::remove_file(STATE_FILE) {
+        cli::Action::Clean => match std::fs::remove_file(STATE_FILE) {
             Ok(()) => {}
             Err(err) if err.kind() == io::ErrorKind::NotFound => {}
             Err(err) => return Err(err.into()),
