@@ -82,20 +82,18 @@ impl super::Manager for Manager {
         };
 
         let json = std::fs::read(&path).unwrap();
-        let mut json: facet_value::Value = facet_json::from_slice(&json).unwrap();
-        let package = json.as_object_mut().unwrap();
+        let mut json: serde_json::Value = serde_json::from_slice(&json).unwrap();
 
         let kind = deps.internal_kind(dep.kind.unwrap());
         let name = dep.renamed.as_deref().unwrap_or(&dep.name);
-        package
-            .get_mut(kind)
+        json.get_mut(kind)
             .unwrap()
             .as_object_mut()
             .unwrap()
-            .insert(name, latest);
+            .insert(name.to_owned(), serde_json::Value::String(latest.clone()));
 
         let writer = File::create(path).unwrap();
-        facet_json::to_writer_std_pretty(writer, &json).unwrap();
+        serde_json::to_writer_pretty(writer, &json).unwrap();
     }
 }
 

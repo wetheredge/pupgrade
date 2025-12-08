@@ -14,16 +14,11 @@ duct = "=1.1.0"
 env_logger = { version = "=0.11.8", features = ["auto-color", "humantime"], default-features = false }
 facet = { version = "=0.31.8", features = ["camino"] }
 facet-json = "=0.31.0"
-facet-value = "=0.1.0"
 gix = { version = "=0.75.0", features = ["blocking-http-transport-reqwest-rust-tls"] }
 hex = "=0.4.3"
 lexopt = "=0.3.1"
 log = { version = "=0.4.28", features = ["release_max_level_debug"] }
+serde_json = { version = "=1.0.145", features = ["preserve_order"] }
 sha2 = "=0.10.9"
 taplo = { version = "=0.14.0", default-features = false }
 ureq = "=3.1.4"
-
-[patch.crates-io]
-facet = { git = "https://github.com/facet-rs/facet.git", rev = "cc8b67b5a9a05b7128668942d431c9b8086ea19d" }
-facet-json = { git = "https://github.com/facet-rs/facet.git", rev = "cc8b67b5a9a05b7128668942d431c9b8086ea19d" }
-facet-value = { git = "https://github.com/facet-rs/facet.git", rev = "cc8b67b5a9a05b7128668942d431c9b8086ea19d" }

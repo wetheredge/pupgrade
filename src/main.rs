@@ -106,7 +106,9 @@ fn init_logger() {
 
 fn load_state() -> anyhow::Result<Deps> {
     let raw = std::fs::read_to_string(STATE_FILE).context("reading state")?;
-    let deps = Deps::deserialize(&raw).context("deserializing state")?;
+    let deps = Deps::deserialize(&raw)
+        .map_err(facet_json::DeserError::into_owned)
+        .context("deserializing state")?;
     Ok(deps)
 }
 

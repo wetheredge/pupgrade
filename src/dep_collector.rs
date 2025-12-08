@@ -45,6 +45,7 @@ pub(crate) struct Dep {
 pub(crate) enum Updates {
     #[default]
     None,
+    #[expect(unused)]
     Failed,
     Found(Version),
 }
@@ -84,7 +85,7 @@ impl Deps {
         facet_json::to_string(&self)
     }
 
-    pub(crate) fn deserialize(s: &str) -> Result<Self, facet_json::JsonError> {
+    pub(crate) fn deserialize(s: &str) -> Result<Self, facet_json::DeserError<'_>> {
         facet_json::from_str::<Deps>(s)
     }
 
