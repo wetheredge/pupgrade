@@ -100,16 +100,20 @@ impl super::Manager for Manager {
                     ),
                 };
 
+                let current = current.strip_prefix('=').unwrap_or(current);
+                let is_prerelease = |v: &str| v.contains('-');
+                let current_prelease = is_prerelease(current);
+
                 let mut response = ureq::get(uri).call().unwrap();
                 let body = response.body_mut().as_reader();
                 let mut crates = BufReader::new(body)
                     .lines()
                     .filter_map(|line| facet_json::from_str(&line.ok()?).ok())
-                    .collect::<Vec<Crate>>();
+                    .filter(|c: &Crate| current_prelease || !is_prerelease(&c.vers))
+                    .collect::<Vec<_>>();
 
                 let Crate { vers: latest } = crates.pop().unwrap();
 
-                let current = current.strip_prefix('=').unwrap_or(current);
                 if current == latest {
                     Updates::None
                 } else {
