@@ -10,14 +10,14 @@ boxcar = "=0.2.14"
 camino = "=1.2.1"
 dialoguer = { version = "=0.12.0", default-features = false, features = ["fuzzy-select"] }
 dirs = "=6.0.0"
-duct = "=1.1.0"
+duct = "=1.1.1"
 env_logger = { version = "=0.11.8", features = ["auto-color", "humantime"], default-features = false }
 facet = { version = "=0.31.8", features = ["camino"] }
 facet-json = "=0.31.0"
 gix = { version = "=0.75.0", features = ["blocking-http-transport-reqwest-rust-tls"] }
 hex = "=0.4.3"
 lexopt = "=0.3.1"
-log = { version = "=0.4.28", features = ["release_max_level_debug"] }
+log = { version = "=0.4.29", features = ["release_max_level_debug"] }
 serde_json = { version = "=1.0.145", features = ["preserve_order"] }
 sha2 = "=0.10.9"
 taplo = { version = "=0.14.0", default-features = false }
