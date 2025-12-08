@@ -51,7 +51,7 @@
 
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
-        updater = craneLib.buildPackage (
+        pupgrade = craneLib.buildPackage (
           commonArgs
           // {
             inherit cargoArtifacts;
@@ -60,7 +60,7 @@
       in
       {
         checks = {
-          build = updater // {
+          build = pupgrade // {
             # Don't run tests twice
             doCheck = false;
           };
@@ -111,11 +111,11 @@
         };
 
         packages = {
-          default = updater;
+          default = pupgrade;
         };
 
         apps.default = flake-utils.lib.mkApp {
-          drv = updater;
+          drv = pupgrade;
         };
 
         devShells.default = craneLib.devShell {

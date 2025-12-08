@@ -14,7 +14,7 @@ use crate::dep_collector::Updates;
 use self::dep_collector::{Dep, DepCollector, Deps, DepsBuilder};
 use self::managers::Manager;
 
-static STATE_FILE: &str = ".updater.json";
+static STATE_FILE: &str = concat!(".", env!("CARGO_PKG_NAME"), ".json");
 
 fn main() -> Result<(), anyhow::Error> {
     init_logger();
@@ -97,7 +97,7 @@ fn main() -> Result<(), anyhow::Error> {
 
 fn init_logger() {
     let env = env_logger::Env::new()
-        .filter("UPDATER_LOG")
+        .filter("PUPGRADE_LOG")
         .write_style("COLOR");
     env_logger::Builder::from_env(env)
         .format_timestamp_millis()
