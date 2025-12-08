@@ -3,7 +3,6 @@ use facet::Facet;
 
 use std::collections::HashMap;
 use std::fmt;
-use std::path::PathBuf;
 use std::sync::Mutex;
 
 #[derive(Clone, Copy)]
@@ -16,7 +15,6 @@ pub(crate) struct DepsBuilder {
     paths: boxcar::Vec<Utf8PathBuf>,
     kinds: Mutex<HashMap<String, (usize, String)>>,
     deps: boxcar::Vec<Dep>,
-    lockfiles: boxcar::Vec<Lockfile>,
 }
 
 #[derive(Facet)]
@@ -24,7 +22,6 @@ pub(crate) struct Deps {
     paths: Vec<Utf8PathBuf>,
     kinds: Vec<(String, String)>,
     deps: Vec<Dep>,
-    lockfiles: Vec<Lockfile>,
 }
 
 #[derive(Facet)]
@@ -82,12 +79,6 @@ pub(crate) struct UpdatePair<'a> {
     new: &'a Updates,
 }
 
-#[derive(Facet)]
-struct Lockfile {
-    manager: usize,
-    path: PathBuf,
-}
-
 impl Deps {
     pub(crate) fn serialize(self) -> String {
         facet_json::to_string(&self)
@@ -128,7 +119,6 @@ impl DepsBuilder {
             paths: boxcar::Vec::new(),
             kinds: Mutex::new(HashMap::new()),
             deps: boxcar::Vec::new(),
-            lockfiles: boxcar::Vec::new(),
         }
     }
 
@@ -232,7 +222,6 @@ impl From<DepsBuilder> for Deps {
             paths: builder.paths.into_iter().collect(),
             kinds,
             deps: builder.deps.into_iter().collect(),
-            lockfiles: builder.lockfiles.into_iter().collect(),
         }
     }
 }
