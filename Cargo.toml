@@ -21,7 +21,6 @@ lexopt = "=0.3.1"
 log = { version = "=0.4.28", features = ["release_max_level_debug"] }
 sha2 = "=0.10.9"
 taplo = { version = "=0.14.0", default-features = false }
-thiserror = "=2.0.17"
 ureq = "=3.1.4"
 
 [patch.crates-io]

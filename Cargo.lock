@@ -2444,7 +2444,6 @@ dependencies = [
  "log",
  "sha2",
  "taplo",
- "thiserror 2.0.17",
  "ureq",
 ]
 
