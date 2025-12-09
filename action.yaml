@@ -1,0 +1,29 @@
+name: pupgrade
+description: Install pupgrade
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      if: runner.arch != "X64"
+      run: |
+        echo '::error::Unsupported runner arch: "${{ runner.arch }}"'
+        exit 1
+    - shell: bash
+      if: runner.os != "Linux"
+      run: |
+        echo '::error::Unsupported runner os: "${{ runner.os }}"'
+        exit 1
+    - shell: bash
+      env:
+        CMD: ${{ inputs.cmd }}
+        TAG: v0.1.0
+        REPO: ${{ github.action_repository }}
+      run: |
+        asset='pupgrade-x86_64-unknown-linux-gnu.tar.gz'
+        url="https://github.com/$REPO/releases/download/$TAG/$asset"
+
+        dir='${{ runner.temp }}/pupgrade'
+        mkdir -p "$dir"
+        curl --proto '=https' --tlsv1.2 --fail --follow "$url" | tar -xzC "$dir"
+        echo "$dir" >> "$GITHUB_PATH"
