@@ -25,5 +25,5 @@ runs:
 
         dir='${{ runner.temp }}/pupgrade'
         mkdir -p "$dir"
-        curl --proto '=https' --tlsv1.2 --fail --follow "$url" | tar -xzC "$dir"
+        curl --proto '=https' --tlsv1.2 -fL "$url" | tar -xzC "$dir"
         echo "$dir" >> "$GITHUB_PATH"
