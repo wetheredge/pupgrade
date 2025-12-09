@@ -5,12 +5,12 @@ runs:
   using: composite
   steps:
     - shell: bash
-      if: runner.arch != "X64"
+      if: runner.arch != 'X64'
       run: |
         echo '::error::Unsupported runner arch: "${{ runner.arch }}"'
         exit 1
     - shell: bash
-      if: runner.os != "Linux"
+      if: runner.os != 'Linux'
       run: |
         echo '::error::Unsupported runner os: "${{ runner.os }}"'
         exit 1
